@@ -32,15 +32,49 @@ kunnen de scripts geen beheerrechten verkrijgen.
 
 ## Software
 
-| Pakket | Gedrag |
-| --- | --- |
-| Google.Chrome | Installeert voor alle gebruikers; bestaande installatie wordt overgeslagen. |
-| TeamViewer.TeamViewer | Volledige EXE-client via nullsoft; bestaande installatie wordt overgeslagen. |
-| Microsoft.PowerShell | Nieuwste stabiele versie via de machinebrede MSI (wix); oudere versie wordt bijgewerkt. |
+| App | Pakket / bron | Installatiebereik |
+| --- | --- | --- |
+| Chrome | Google.Chrome / winget | Alle gebruikers |
+| TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
+| PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
+| VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
+| OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
+| Notepad++ | Notepad++.Notepad++ / winget | Alle gebruikers |
+| Discord | Discord.Discord / winget | Uitvoerend account |
+| Reolink Client | Reolink.Reolink / winget | Standaard van installer |
+| Paint.NET | dotPDN.PaintDotNet / winget | Alle gebruikers |
+| LastPass | LastPass.LastPass / winget | Standaard van installer |
+| Git inclusief Git Bash | Git.Git / winget | Alle gebruikers |
+| Zoom | Zoom.Zoom / winget | Alle gebruikers |
+| Teams | Microsoft.Teams / winget, MSIX | Uitvoerend account |
+| WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
+| VLC | VideoLAN.VLC / winget | Alle gebruikers |
+| Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
 
-WinGet moet beschikbaar zijn via Microsoft App Installer. De pakket- en
-bronvoorwaarden worden automatisch geaccepteerd. De scripts starten geen
-remote TeamViewer-sessie en koppelen geen TeamViewer-account.
+WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Bestaande apps
+worden overgeslagen; PowerShell wordt wel bijgewerkt naar de nieuwste stabiele
+versie. De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
+Dezelfde TeamViewer-installatie staat maar eenmaal in de lijst.
+
+De opgegeven oude ID's Microsoft.OneNote, LogMeIn.LastPass en WhatsApp.WhatsApp
+zijn vervangen door bovenstaande actuele vermeldingen. OneNote gebruikt de
+huidige desktopversie, niet de oude OneNote voor Windows 10.
+
+Sommige manifests ondersteunen geen expliciet machinebereik. Daarom wordt
+alleen waar ondersteund een bereik afgedwongen. Bij apps voor het uitvoerende
+account moet UAC onder het bedoelde account worden bevestigd; een ander
+administratoraccount krijgt anders die apps.
+
+Yodeck heeft geen WinGet-pakket. Hetzelfde installatiescript downloadt daarom
+de actuele installer via de [officiele Yodeck-download](https://yodeck.link/windowsv2),
+controleert de geldige digitale handtekening van Flipnode LLC en voert de
+NSIS-installer stil uit. Een bestaande Yodeck Player wordt overgeslagen.
+Na installatie controleert het script de Windows-programmaregistratie.
+
+Open Yodeck daarna en koppel de registratiecode zelf aan je account:
+[Yodeck-handleiding](https://www.yodeck.com/docs/user-manual/setting-up-the-windows-player-with-the-yodeck-software/).
+Accounts worden niet automatisch gekoppeld. Er wordt geen remote
+TeamViewer-sessie gestart.
 
 ## Configuratie
 
@@ -80,7 +114,7 @@ Optioneel ondersteunt elk script -WhatIf: dan geen UAC, downloads,
 software-installatie, logaanmaak of wijzigingen. Het webvoorbeeld voert
 de scripts echt uit, zonder proefrun.
 
-Tests simuleren WinGet, beheerrechten, herstarten onder een andere runtime en
+Tests simuleren WinGet, de Yodeck-installer en handtekeningcontrole, beheerrechten, herstarten onder een andere runtime en
 Windows-instellingen. Ze installeren geen software en veranderen geen taal.
 Voer vanuit deze map in Windows PowerShell 5.1 uit:
 

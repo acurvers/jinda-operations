@@ -19,7 +19,8 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>Windows 11 Pro inrichten: <strong>Chrome, TeamViewer en de nieuwste stabiele PowerShell 7</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
+    <p>Windows 11 Pro inrichten: <strong>16 apps</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
+    <details><summary>Welke apps?</summary><p>Chrome, TeamViewer, PowerShell 7 (nieuwste stabiele versie), VS Code, OneNote, Notepad++, Discord, Reolink Client, Paint.NET, LastPass, Git Bash, Zoom, Teams, WhatsApp, VLC en Yodeck Player.</p></details>
     <p>Plak dit hele blok in PowerShell. Accepteer de eventuele Windows-vragen om administratorrechten.</p>
     <pre><code id="combined-setup-code">$ErrorActionPreference = 'Stop'
 $baseUrl = 'https://acurvers.github.io/jinda-operations'
@@ -35,6 +36,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $config -Keyboard USInte
 if ($LASTEXITCODE -ne 0) { throw 'Windows-configuratie mislukt.' }</code></pre>
     <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
     <p><strong>Herstart Windows na afloop.</strong> De taal geldt voor het systeem, nieuwe gebruikers en het uitvoerende account. Andere bestaande accounts behouden hun voorkeur. Datum- en getalnotatie blijven behouden.</p>
+    <p>Yodeck koppel je na installatie zelf aan je account. Sommige apps installeren alleen voor het uitvoerende account.</p>
     <p>Twee vaste scripts: <a href="install-software.ps1">installatie</a> en <a href="set-windows-english.ps1">configuratie</a>. Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord.</p>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>

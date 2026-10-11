@@ -1,9 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Installeert Google Chrome, TeamViewer en de nieuwste stabiele PowerShell 7 via WinGet.
+Installeert de Jinda-apps via WinGet en de officiele Yodeck Windows-installer.
 .DESCRIPTION
-Installeert voor alle gebruikers. Bestaande Chrome/TeamViewer-installaties
+Installeert waar ondersteund voor alle gebruikers. Bestaande app-installaties
 worden overgeslagen; een oudere PowerShell 7 wordt bijgewerkt.
 Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
 De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
@@ -148,6 +148,59 @@ function Invoke-JindaManagedScript {
 }
 # END shared runtime.
 
+function Test-JindaYodeckInstalled {
+    $uninstallPaths = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    foreach ($entry in (Get-ItemProperty -Path $uninstallPaths -ErrorAction SilentlyContinue)) {
+        if ($entry.PSObject.Properties['DisplayName'] -and $entry.DisplayName -match '^Yodeck( Electron)? Player(?:\s|$)') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Install-JindaYodeck {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $ErrorActionPreference = 'Stop'
+    if (-not $PSCmdlet.ShouldProcess('Yodeck Player', 'Downloaden bij Yodeck en installeren')) { return $false }
+    if (Test-JindaYodeckInstalled) {
+        Write-Host 'Yodeck Player is al aanwezig; overgeslagen.'
+        return $false
+    }
+    $folder = Join-Path $env:TEMP ('jinda-yodeck-' + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $folder
+    $installer = Join-Path $folder 'yodeck-player.exe'
+    try {
+        Write-Host 'Yodeck Player downloaden via de officiele Windows-download...'
+        # Published on https://www.yodeck.com/docs/user-manual/setting-up-the-windows-player-with-the-yodeck-software/
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://yodeck.link/windowsv2' -OutFile $installer -ErrorAction Stop
+        $signature = Get-AuthenticodeSignature -FilePath $installer
+        if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
+            $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)CN=Flipnode LLC(?:,|$)') {
+            throw 'Yodeck: de installer heeft geen geldige handtekening van Flipnode LLC; installatie gestopt.'
+        }
+        # The official Electron installer is NSIS; /allusers selects machine installation.
+        $process = Start-Process -FilePath $installer -ArgumentList @('/S', '/allusers') -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop
+        if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Yodeck: installatie mislukt (exitcode $($process.ExitCode))."
+        }
+        if (-not (Test-JindaYodeckInstalled)) {
+            throw 'Yodeck: de installer is klaar, maar de installatie is niet teruggevonden in Windows.'
+        }
+        Write-Host 'Yodeck Player is geinstalleerd. Open de app om deze met de registratiecode aan je Yodeck-account te koppelen.'
+        return ($process.ExitCode -eq 3010)
+    }
+    finally {
+        # Remove only our downloaded executable; never recurse through a temp directory.
+        if (Test-Path -LiteralPath $installer) { Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -160,23 +213,36 @@ function Install-JindaSoftware {
         throw 'WinGet ontbreekt. Installeer of werk App Installer bij via de Microsoft Store en open PowerShell opnieuw.'
     }
 
+    # Scope is only forced when the manifest supports it; empty means installer default.
     $packages = @(
-        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Extra = @('--no-upgrade') }
-        # Selecteer de volledige EXE-installer, niet het MSI-updatepakket.
-        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Extra = @('--no-upgrade', '--installer-type', 'nullsoft') }
-        # Stabiele MSI voor alle gebruikers; laat WinGet oudere versies bijwerken.
-        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Extra = @('--installer-type', 'wix') }
+        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade', '--installer-type', 'nullsoft') }
+        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
+        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        # Current desktop OneNote, not the retired OneNote for Windows 10.
+        @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @('--no-upgrade') }
+        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @('--no-upgrade') }
+        @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @('--no-upgrade') }
+        @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @('--no-upgrade') }
+        @{ Id = 'Git.Git'; Name = 'Git (inclusief Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--no-upgrade', '--installer-type', 'msix') }
+        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @('--no-upgrade') }
+        @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
     )
     $restartNeeded = $false
     foreach ($package in $packages) {
-        if (-not $PSCmdlet.ShouldProcess($package.Name, 'Installeren via WinGet voor alle gebruikers')) {
+        if (-not $PSCmdlet.ShouldProcess($package.Name, 'Installeren via WinGet')) {
             continue
         }
         $wingetArguments = @(
-            'install', '--id', $package.Id, '--exact', '--source', 'winget',
-            '--scope', 'machine', '--silent',
+            'install', '--id', $package.Id, '--exact', '--source', $package.Source,
+            '--silent',
             '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
         ) + $package.Extra
+        if ($package.Scope) { $wingetArguments += @('--scope', $package.Scope) }
         Write-Host "$($package.Name) installeren via WinGet..."
         & $winget.Source @wingetArguments | Out-Host
         $wingetExitCode = $LASTEXITCODE
@@ -189,6 +255,7 @@ function Install-JindaSoftware {
             default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
         }
     }
+    if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
     if ($restartNeeded) {
         Write-Warning 'Software is geinstalleerd. Herstart Windows om de installatie af te ronden.'
     }
