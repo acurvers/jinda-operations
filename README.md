@@ -2,6 +2,39 @@
 
 PowerShell-scripts voor het inrichten van Windows-pc's.
 
+## Alles in een keer
+
+[setup.ps1](https://acurvers.github.io/jinda-operations/setup.ps1) installeert
+**Google Chrome en TeamViewer** en stelt Windows standaard in op **Engels (VS)
+met een US-International-toetsenbord**. Open **Windows PowerShell als
+administrator** en voer uit:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$script = Join-Path $env:TEMP 'jinda-setup.ps1'
+Invoke-WebRequest -UseBasicParsing 'https://acurvers.github.io/jinda-operations/setup.ps1' -OutFile $script
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
+```
+
+Dit voert de installatie direct uit. Herstart Windows na afloop.
+Gebruik eventueel `-Keyboard US` op de laatste regel voor een normaal
+US-toetsenbord. De bestaande regionale datum- en getalnotatie blijft behouden.
+De taalwijziging geldt voor de systeemstandaard, het aanmeldscherm,
+systeemaccounts, nieuwe gebruikers en het uitvoerende account. Andere bestaande
+gebruikers kunnen hun eigen voorkeur behouden; zie de uitleg hieronder.
+
+Het startscript downloadt beide deelscripts voordat het begint. Bij een fout
+stopt het met een melding; al uitgevoerde stappen worden niet teruggedraaid.
+Een gemelde benodigde herstart na software-installatie blokkeert de taalstap
+niet. Er wordt niet automatisch opnieuw opgestart.
+
+Alleen Chrome en TeamViewer, zonder taalwijziging:
+[install-software.ps1](https://acurvers.github.io/jinda-operations/install-software.ps1).
+Beide worden via WinGet voor alle gebruikers geinstalleerd. Reeds aanwezige
+installaties worden overgeslagen. TeamViewer gebruikt de volledige EXE-client
+(`TeamViewer.TeamViewer`, installer-type `nullsoft`). De pakket- en
+bronvoorwaarden worden automatisch geaccepteerd.
+
 ## Google Chrome installeren
 
 - [PowerShell-script downloaden](https://acurvers.github.io/jinda-operations/install-chrome.ps1)
@@ -125,6 +158,12 @@ De downloadlink volgt de huidige versie op `main`. Wijzigingen aan het script
 worden na publicatie op dezelfde URL beschikbaar.
 
 ## Controle
+
+Voor `install-software.ps1` slagen zes tests met een gesimuleerde WinGet,
+waaronder bestaande installaties, fouten en het doorlopen na een herstartmelding.
+Dit script en `setup.ps1` zijn ook op syntax en met echte `-WhatIf`-runs
+gecontroleerd in Windows PowerShell 5.1. Een echte software-installatie en
+de volledige gecombineerde uitvoering zijn nog niet op een doel-pc getest.
 
 Het Chrome-script is op syntax en `-WhatIf` gecontroleerd met Windows
 PowerShell 5.1 en PowerShell 7. Het taalscript is bedoeld voor Windows

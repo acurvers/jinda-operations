@@ -20,6 +20,16 @@
   <main>
     <h1>Jinda Operations</h1>
     <p>PowerShell-scripts voor het inrichten van Windows 11-pc's.</p>
+    <h2>Alles in een keer</h2>
+    <p><a class="button" href="setup.ps1" download>Download setup.ps1</a></p>
+    <p>Installeert <strong>Chrome en TeamViewer</strong> en stelt Windows standaard in op <strong>Engels (VS) met US-International</strong>.</p>
+    <p>Open <strong>Windows PowerShell als administrator</strong> en voer uit:</p>
+    <pre><code>$ErrorActionPreference = 'Stop'
+$script = Join-Path $env:TEMP 'jinda-setup.ps1'
+Invoke-WebRequest -UseBasicParsing 'https://acurvers.github.io/jinda-operations/setup.ps1' -OutFile $script
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script</code></pre>
+    <p>Dit downloadt en start de installatie direct. <strong>Herstart Windows na afloop.</strong> Datum- en getalnotatie blijven behouden. Andere bestaande gebruikers kunnen hun eigen taalvoorkeur behouden.</p>
+    <p>Alleen software installeren? Download <a href="install-software.ps1" download>install-software.ps1</a> voor Chrome en TeamViewer.</p>
     <h2>Google Chrome installeren</h2>
     <p><a class="button" href="install-chrome.ps1" download>Download install-chrome.ps1</a></p>
     <p>Het script installeert Chrome voor alle gebruikers. Een bestaande installatie wordt overgeslagen. WinGet en toestemming voor installatie met beheerrechten zijn nodig.</p>
