@@ -21,23 +21,12 @@
     <h1>Jinda Operations</h1>
     <p>Windows 11 Pro inrichten: <strong>16 apps</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
     <details><summary>Welke apps?</summary><p>Chrome, TeamViewer, PowerShell 7 (nieuwste stabiele versie), VS Code, OneNote, Notepad++, Discord, Reolink Client, Paint.NET, LastPass, Git Bash, Zoom, Teams, WhatsApp, VLC en Yodeck Player.</p></details>
-    <p>Plak dit hele blok in PowerShell. Accepteer de eventuele Windows-vragen om administratorrechten.</p>
-    <pre><code id="combined-setup-code">$ErrorActionPreference = 'Stop'
-$baseUrl = 'https://acurvers.github.io/jinda-operations'
-$folder = Join-Path $env:TEMP ('jinda-' + [guid]::NewGuid().ToString('N'))
-$null = New-Item -ItemType Directory -Path $folder
-$install = Join-Path $folder 'install-software.ps1'
-$config = Join-Path $folder 'set-windows-english.ps1'
-Invoke-WebRequest -UseBasicParsing "$baseUrl/install-software.ps1" -OutFile $install
-Invoke-WebRequest -UseBasicParsing "$baseUrl/set-windows-english.ps1" -OutFile $config
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $install
-if ($LASTEXITCODE -notin @(0, 3010)) { throw 'Software-installatie mislukt.' }
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $config -Keyboard USInternational
-if ($LASTEXITCODE -ne 0) { throw 'Windows-configuratie mislukt.' }</code></pre>
+    <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Init regelt de rest.</p>
+    <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
     <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
     <p><strong>Herstart Windows na afloop.</strong> De taal geldt voor het systeem, nieuwe gebruikers en het uitvoerende account. Andere bestaande accounts behouden hun voorkeur. Datum- en getalnotatie blijven behouden.</p>
     <p>Yodeck koppel je na installatie zelf aan je account. Sommige apps installeren alleen voor het uitvoerende account.</p>
-    <p>Twee vaste scripts: <a href="install-software.ps1">installatie</a> en <a href="set-windows-english.ps1">configuratie</a>. Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord.</p>
+    <p>Start via <a href="init.ps1">init.ps1</a>; twee vaste scripts voor <a href="install-software.ps1">installatie</a> en <a href="set-windows-english.ps1">configuratie</a>. Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord.</p>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
 </body>

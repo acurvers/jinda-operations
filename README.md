@@ -4,12 +4,23 @@ Twee vaste scripts voor Windows 11 Pro. Nieuwe software voegen we toe aan
 [install-software.ps1](install-software.ps1); nieuwe instellingen aan
 [set-windows-english.ps1](set-windows-english.ps1).
 
-De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat het
-kopieerbare codeblok om beide scripts direct achter elkaar uit te voeren.
+De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat de
+eenregelige startopdracht voor [init.ps1](init.ps1). Init downloadt en start
+de installatie en configuratie achter elkaar; de inhoud blijft in de twee vaste scripts.
+
+## Starten
+
+~~~powershell
+& { $p = "$env:TEMP\jinda-init.ps1"; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }
+~~~
+
+De download moet slagen voordat init start. De startopdracht voert de scripts
+direct uit. Voeg voor een normaal US-toetsenbord -Keyboard US toe na -File $p,
+voor de afsluitende accolade; standaard kiest init US-International.
 
 ## Uitvoering
 
-Beide scripts vragen automatisch administratorrechten via Windows UAC en
+Init en de twee deelscripts vragen zo nodig administratorrechten via Windows UAC en
 kiezen de nieuwste aanwezige stabiele PowerShell 7 of hoger voor de native
 64-bits architectuur. Ze zoeken in de standaard PowerShell-installatiemappen,
 de huidige runtime, PATH en Microsoft Store-installaties. Previewversies
@@ -25,10 +36,13 @@ van hetzelfde configuratiebestand. Zo blijven de getypeerde Windows-taalobjecten
 beschikbaar zonder deserialisatie via de PowerShell-compatibiliteitslaag.
 Er is geen extra configuratiescript nodig.
 
-Start je het codeblok al in een administratorvenster, dan volgt geen extra UAC-vraag.
-Anders kan Windows voor elk script om toestemming vragen. Het vervolg wacht
-op afronding en stopt bij een fout. Accepteer de UAC-vragen; zonder toestemming
-kunnen de scripts geen beheerrechten verkrijgen.
+Init vraagt eenmaal om beheerrechten; de twee deelscripts erven die rechten.
+Start je al in een administratorvenster, dan volgt geen extra UAC-vraag.
+Init downloadt eerst beide scripts en voert ze daarna een voor een uit.
+Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
+Bij een installatiefout start de configuratie niet. Een software-exitcode
+3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
+doorgegeven. Init start Windows niet zelf opnieuw op.
 
 ## Software
 
@@ -84,7 +98,7 @@ en-US-weergavetaalpakket, zonder optionele spraak/OCR-functies. Stelt ook de
 systeemlocale voor oudere niet-Unicode-programma's op en-US.
 
 Gebruik -Keyboard USInternational voor US-International of -Keyboard US
-voor normaal US. Zonder parameter is US de standaard; het codeblok op de
+voor normaal US. Zonder parameter is US de standaard; init op de
 webpagina kiest US-International. Overige talen blijven beschikbaar.
 
 Datum- en getalnotatie blijven behouden. Land/regio van het uitvoerende account
@@ -108,7 +122,7 @@ en de plek in het script. Bij een UAC-fout verschijnt de melding in het
 oorspronkelijke venster, voordat een log kan worden gestart.
 
 Exitcodes: 0 geslaagd, 1 fout, 3010 software geinstalleerd maar herstart nodig.
-Het webvoorbeeld gaat bij 3010 door met configureren en stopt bij overige fouten.
+Init gaat bij 3010 door met configureren en stopt bij overige fouten.
 
 Optioneel ondersteunt elk script -WhatIf: dan geen UAC, downloads,
 software-installatie, logaanmaak of wijzigingen. Het webvoorbeeld voert
@@ -127,7 +141,7 @@ Een echte UAC-/installatie-/taalwijzigingsronde moet op de doel-pc worden getest
 
 ## Publicatie en bronnen
 
-GitHub Pages publiceert de hoofdmap van main; de twee vaste script-URL's volgen
+GitHub Pages publiceert de hoofdmap van main; init en de twee vaste script-URL's volgen
 de gepubliceerde versie. Er zijn geen losse scripts per programma of instelling.
 
 Microsoft:

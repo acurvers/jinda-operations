@@ -11,7 +11,7 @@ De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param([Parameter(DontShow = $true)][switch]$RuntimeReady)
 
-# BEGIN shared runtime (kept identical in both entry scripts).
+# BEGIN shared runtime (kept identical in all entry scripts).
 function Test-JindaAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)

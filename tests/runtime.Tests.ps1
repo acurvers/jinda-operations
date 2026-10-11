@@ -126,11 +126,13 @@ Describe 'Starting an elevated child safely' {
         Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It
     }
 
-    It 'keeps both self-contained entry scripts on identical runtime code' {
+    It 'keeps all three self-contained entry scripts on identical runtime code' {
         $pattern = '(?s)# BEGIN shared runtime.*?# END shared runtime\.'
         $install = [regex]::Match([IO.File]::ReadAllText((Join-Path $projectPath 'install-software.ps1')), $pattern).Value
         $config = [regex]::Match([IO.File]::ReadAllText((Join-Path $projectPath 'set-windows-english.ps1')), $pattern).Value
+        $init = [regex]::Match([IO.File]::ReadAllText((Join-Path $projectPath 'init.ps1')), $pattern).Value
         $install.Length | Should BeGreaterThan 100
         $install | Should Be $config
+        $install | Should Be $init
     }
 }

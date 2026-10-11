@@ -18,7 +18,7 @@ param(
     [Parameter(DontShow = $true)][switch]$WindowsLanguageWorker
 )
 
-# BEGIN shared runtime (kept identical in both entry scripts).
+# BEGIN shared runtime (kept identical in all entry scripts).
 function Test-JindaAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
