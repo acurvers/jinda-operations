@@ -19,55 +19,23 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>PowerShell-scripts voor het inrichten van Windows 11-pc's.</p>
-    <h2>Alles in een keer</h2>
-    <p><a class="button" href="setup.ps1" download>Download setup.ps1</a></p>
-    <p>Installeert <strong>Chrome, TeamViewer en de nieuwste stabiele PowerShell 7</strong> en stelt Windows standaard in op <strong>Engels (VS) met US-International</strong>.</p>
-    <p>Open <strong>Windows PowerShell als administrator</strong> en voer uit:</p>
-    <pre><code>$ErrorActionPreference = 'Stop'
-$script = Join-Path $env:TEMP 'jinda-setup.ps1'
-Invoke-WebRequest -UseBasicParsing 'https://acurvers.github.io/jinda-operations/setup.ps1' -OutFile $script
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script</code></pre>
-    <p>Dit downloadt en start de installatie direct. <strong>Herstart Windows na afloop.</strong> Datum- en getalnotatie blijven behouden. Andere bestaande gebruikers kunnen hun eigen taalvoorkeur behouden.</p>
-    <h3>Installatie en configuratie direct achter elkaar uitvoeren</h3>
-    <p>Dit voorbeeld downloadt beide scripts en voert eerst de installatie en daarna de configuratie uit. Plak het hele blok in <strong>Windows PowerShell als administrator</strong>.</p>
+    <p>Windows 11 Pro inrichten: <strong>Chrome, TeamViewer en de nieuwste stabiele PowerShell 7</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
+    <p>Plak dit hele blok in PowerShell. Accepteer de eventuele Windows-vragen om administratorrechten.</p>
     <pre><code id="combined-setup-code">$ErrorActionPreference = 'Stop'
 $baseUrl = 'https://acurvers.github.io/jinda-operations'
-$install = Join-Path $env:TEMP 'jinda-install-software.ps1'
-$config = Join-Path $env:TEMP 'jinda-set-windows-english.ps1'
+$folder = Join-Path $env:TEMP ('jinda-' + [guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $folder
+$install = Join-Path $folder 'install-software.ps1'
+$config = Join-Path $folder 'set-windows-english.ps1'
 Invoke-WebRequest -UseBasicParsing "$baseUrl/install-software.ps1" -OutFile $install
 Invoke-WebRequest -UseBasicParsing "$baseUrl/set-windows-english.ps1" -OutFile $config
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $install
 if ($LASTEXITCODE -notin @(0, 3010)) { throw 'Software-installatie mislukt.' }
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File $config -Keyboard USInternational
 if ($LASTEXITCODE -ne 0) { throw 'Windows-configuratie mislukt.' }</code></pre>
-    <p><strong>Herstart Windows na afloop.</strong> PowerShell 7 wordt naast Windows PowerShell 5.1 geinstalleerd en is te starten met <code>pwsh</code>. De taalconfiguratie gebruikt Windows PowerShell 5.1 (<code>powershell.exe</code>).</p>
-    <p>Alleen software installeren? Download <a href="install-software.ps1" download>install-software.ps1</a> voor Chrome, TeamViewer en PowerShell 7. Een oudere PowerShell 7 wordt bijgewerkt; bestaande Chrome- en TeamViewer-installaties worden overgeslagen.</p>
-    <h2>Google Chrome installeren</h2>
-    <p><a class="button" href="install-chrome.ps1" download>Download install-chrome.ps1</a></p>
-    <p>Het script installeert Chrome voor alle gebruikers. Een bestaande installatie wordt overgeslagen. WinGet en toestemming voor installatie met beheerrechten zijn nodig.</p>
-    <h3>1. Downloaden via PowerShell</h3>
-    <pre><code>$scriptPath = Join-Path $env:TEMP 'jinda-install-chrome.ps1'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://acurvers.github.io/jinda-operations/install-chrome.ps1' -OutFile $scriptPath</code></pre>
-    <h3>2. Uitvoeren</h3>
-    <p>Bekijk desgewenst eerst het gedownloade bestand. Start daarna de installatie:</p>
-    <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath</code></pre>
-    <p>De uitvoeringsoptie geldt alleen voor dit proces. De voorwaarden van het pakket en de pakketbron worden automatisch geaccepteerd. Windows kan om beheerrechten vragen.</p>
-    <h3>Eerst een proefrun?</h3>
-    <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -WhatIf</code></pre>
-    <p>Deze proefrun controleert of WinGet beschikbaar is en toont de voorgenomen actie zonder software te installeren.</p>
-    <h2>Windows standaard naar Engels (VS)</h2>
-    <p><a class="button" href="set-windows-english.ps1" download>Download set-windows-english.ps1</a></p>
-    <p>Stelt Engels in voor de systeemstandaard, het aanmeldscherm, systeemaccounts, nieuwe gebruikers en het uitvoerende account. Andere bestaande gebruikers kunnen hun eigen taalvoorkeur behouden.</p>
-    <h3>1. Downloaden</h3>
-    <p>Open de 64-bits <strong>Windows PowerShell als administrator</strong> op de doel-pc.</p>
-    <pre><code>$scriptPath = Join-Path $env:TEMP 'jinda-set-windows-english.ps1'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://acurvers.github.io/jinda-operations/set-windows-english.ps1' -OutFile $scriptPath</code></pre>
-    <h3>2. Uitvoeren met US-International</h3>
-    <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -Keyboard USInternational</code></pre>
-    <p>Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord. Voeg <code>-WhatIf</code> toe voor een proefrun zonder wijzigingen of downloads.</p>
-    <p><strong>Herstart Windows na afloop.</strong> De regionale datum- en getalnotatie van het uitvoerende account blijft behouden; die regio-instellingen worden ook naar nieuwe accounts en systeemaccounts gekopieerd. De tijdzone blijft gelijk.</p>
-    <p>Het script installeert zo nodig het Engelse weergavetaalpakket. <a href="https://github.com/acurvers/jinda-operations#wat-wordt-ingesteld">Lees de volledige werking en vereisten</a>.</p>
+    <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
+    <p><strong>Herstart Windows na afloop.</strong> De taal geldt voor het systeem, nieuwe gebruikers en het uitvoerende account. Andere bestaande accounts behouden hun voorkeur. Datum- en getalnotatie blijven behouden.</p>
+    <p>Twee vaste scripts: <a href="install-software.ps1">installatie</a> en <a href="set-windows-english.ps1">configuratie</a>. Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord.</p>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
 </body>

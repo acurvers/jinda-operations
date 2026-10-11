@@ -1,208 +1,103 @@
 # Jinda Operations
 
-PowerShell-scripts voor het inrichten van Windows-pc's.
+Twee vaste scripts voor Windows 11 Pro. Nieuwe software voegen we toe aan
+[install-software.ps1](install-software.ps1); nieuwe instellingen aan
+[set-windows-english.ps1](set-windows-english.ps1).
 
-## Alles in een keer
+De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat het
+kopieerbare codeblok om beide scripts direct achter elkaar uit te voeren.
 
-[setup.ps1](https://acurvers.github.io/jinda-operations/setup.ps1) installeert
-**Google Chrome, TeamViewer en de nieuwste stabiele PowerShell 7** en stelt Windows standaard in op **Engels (VS)
-met een US-International-toetsenbord**. Open **Windows PowerShell als
-administrator** en voer uit:
+## Uitvoering
 
-```powershell
-$ErrorActionPreference = 'Stop'
-$script = Join-Path $env:TEMP 'jinda-setup.ps1'
-Invoke-WebRequest -UseBasicParsing 'https://acurvers.github.io/jinda-operations/setup.ps1' -OutFile $script
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script
-```
+Beide scripts vragen automatisch administratorrechten via Windows UAC en
+kiezen de nieuwste aanwezige stabiele PowerShell 7 of hoger voor de native
+64-bits architectuur. Ze zoeken in de standaard PowerShell-installatiemappen,
+de huidige runtime, PATH en Microsoft Store-installaties. Previewversies
+en 32-bits runtimes worden overgeslagen. Zonder geschikte PowerShell 7
+starten ze in Windows PowerShell 5.1.
 
-Dit voert de installatie direct uit. Herstart Windows na afloop.
-Gebruik eventueel `-Keyboard US` op de laatste regel voor een normaal
-US-toetsenbord. De bestaande regionale datum- en getalnotatie blijft behouden.
-De taalwijziging geldt voor de systeemstandaard, het aanmeldscherm,
-systeemaccounts, nieuwe gebruikers en het uitvoerende account. Andere bestaande
-gebruikers kunnen hun eigen voorkeur behouden; zie de uitleg hieronder.
+De installatie voegt de nieuwste stabiele PowerShell toe. Het configuratiescript
+zoekt daarna opnieuw naar de nieuwste aanwezige versie. Er wordt geen
+uitvoeringsbeleid permanent gewijzigd.
 
-Het startscript downloadt beide deelscripts voordat het begint. Bij een fout
-stopt het met een melding; al uitgevoerde stappen worden niet teruggedraaid.
-Een gemelde benodigde herstart na software-installatie blokkeert de taalstap
-niet. Er wordt niet automatisch opnieuw opgestart.
+De taalcmdlets gebruiken intern een verhoogd Windows PowerShell 5.1-proces
+van hetzelfde configuratiebestand. Zo blijven de getypeerde Windows-taalobjecten
+beschikbaar zonder deserialisatie via de PowerShell-compatibiliteitslaag.
+Er is geen extra configuratiescript nodig.
 
-### Installatie en configuratie direct achter elkaar
+Start je het codeblok al in een administratorvenster, dan volgt geen extra UAC-vraag.
+Anders kan Windows voor elk script om toestemming vragen. Het vervolg wacht
+op afronding en stopt bij een fout. Accepteer de UAC-vragen; zonder toestemming
+kunnen de scripts geen beheerrechten verkrijgen.
 
-Plak dit hele blok in **Windows PowerShell als administrator**. Het downloadt
-beide scripts en voert ze direct na elkaar uit:
+## Software
 
-```powershell
-$ErrorActionPreference = 'Stop'
-$baseUrl = 'https://acurvers.github.io/jinda-operations'
-$install = Join-Path $env:TEMP 'jinda-install-software.ps1'
-$config = Join-Path $env:TEMP 'jinda-set-windows-english.ps1'
-Invoke-WebRequest -UseBasicParsing "$baseUrl/install-software.ps1" -OutFile $install
-Invoke-WebRequest -UseBasicParsing "$baseUrl/set-windows-english.ps1" -OutFile $config
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $install
-if ($LASTEXITCODE -notin @(0, 3010)) { throw 'Software-installatie mislukt.' }
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $config -Keyboard USInternational
-if ($LASTEXITCODE -ne 0) { throw 'Windows-configuratie mislukt.' }
-```
-
-Herstart Windows na afloop. Windows PowerShell 5.1 (`powershell.exe`) blijft
-beschikbaar voor de taalconfiguratie. Start PowerShell 7 daarna met `pwsh`.
-
-Alleen Chrome, TeamViewer en PowerShell 7, zonder taalwijziging:
-[install-software.ps1](https://acurvers.github.io/jinda-operations/install-software.ps1).
-De pakketten worden via WinGet voor alle gebruikers geinstalleerd. Reeds
-aanwezige Chrome- en TeamViewer-installaties worden overgeslagen. TeamViewer gebruikt de volledige EXE-client
-(`TeamViewer.TeamViewer`, installer-type `nullsoft`). De pakket- en
-bronvoorwaarden worden automatisch geaccepteerd.
-
-PowerShell gebruikt het stabiele pakket `Microsoft.PowerShell` met de
-MSI-installer (`wix`), zonder vastgezette versie. Een oudere PowerShell 7 wordt
-bijgewerkt naar de nieuwste stabiele versie die WinGet aanbiedt. Er wordt geen
-preview geinstalleerd. PowerShell 7 staat naast Windows PowerShell 5.1, zoals
-beschreven in [Microsofts installatiehandleiding](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows).
-
-## Google Chrome installeren
-
-- [PowerShell-script downloaden](https://acurvers.github.io/jinda-operations/install-chrome.ps1)
-- [Downloadpagina](https://acurvers.github.io/jinda-operations/)
-- [Broncode bekijken](https://github.com/acurvers/jinda-operations/blob/main/install-chrome.ps1)
-
-Open PowerShell op de doel-pc. Download het script:
-
-```powershell
-$scriptPath = Join-Path $env:TEMP 'jinda-install-chrome.ps1'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://acurvers.github.io/jinda-operations/install-chrome.ps1' -OutFile $scriptPath
-```
-
-Bekijk desgewenst het gedownloade bestand en voer het daarna uit:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath
-```
-
-`-ExecutionPolicy Bypass` geldt alleen voor dit PowerShell-proces en verandert
-de opgeslagen uitvoeringsinstellingen niet. Organisatiebeleid kan uitvoering
-nog steeds blokkeren.
-
-Alleen controleren wat het script zou doen:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -WhatIf
-```
-
-### Gedrag en vereisten
-
-- Bedoeld voor Windows 11 met Windows PowerShell 5.1 of PowerShell 7.
-- WinGet moet beschikbaar zijn via Microsoft App Installer.
-- Internettoegang en toestemming voor installatie met beheerrechten zijn nodig.
-- Installeert de beschikbare stabiele `Google.Chrome` via de `winget`-bron
-  voor alle gebruikers. WinGet kiest de passende architectuur.
-- Een door WinGet herkende bestaande installatie wordt overgeslagen;
-  dit script is geen updater.
-- Accepteert automatisch de voorwaarden van het pakket en de pakketbron.
-- De installatie verloopt stil; Windows kan wel een UAC-bevestiging tonen.
-- Fouten geven exitcode `1`; een gemelde benodigde herstart geeft `3010`.
-  Het script start Windows niet zelf opnieuw op.
-- `-WhatIf` controleert de aanwezigheid van WinGet en toont de voorgenomen
-  actie zonder WinGet uit te voeren.
-
-## Windows standaard naar Engels (Verenigde Staten)
-
-- [set-windows-english.ps1 downloaden](https://acurvers.github.io/jinda-operations/set-windows-english.ps1)
-- [Broncode bekijken](https://github.com/acurvers/jinda-operations/blob/main/set-windows-english.ps1)
-
-Dit script stelt **de systeemstandaard** in, inclusief het aanmeldscherm,
-systeemaccounts en nieuw aangemaakte gebruikers. Ook het account dat het script
-uitvoert krijgt Engels als weergavetaal.
-
-Open **Windows PowerShell als administrator** op de doel-pc (64-bits, versie
-5.1; gebruik `powershell.exe`). Download het script:
-
-```powershell
-$scriptPath = Join-Path $env:TEMP 'jinda-set-windows-english.ps1'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://acurvers.github.io/jinda-operations/set-windows-english.ps1' -OutFile $scriptPath
-```
-
-Engels (VS) met een **US-International-toetsenbord**:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -Keyboard USInternational
-```
-
-Voor een **normaal US-toetsenbord** gebruik je `-Keyboard US`, of laat je de
-parameter weg. US-International gebruikt onder andere dode toetsen voor
-accenten; een apostrof verschijnt daardoor soms pas na de volgende toets.
-
-Eerst een proefrun zonder instellingen te veranderen of taalpakketten te downloaden:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -Keyboard USInternational -WhatIf
-```
-
-**Herstart Windows na de echte uitvoering.** Het script herstart niet zelf.
-
-### Wat wordt ingesteld?
-
-| Onderdeel | Gedrag |
+| Pakket | Gedrag |
 | --- | --- |
-| Windows-weergavetaalpakket | Installeert en-US als het volledige taalpakket ontbreekt; aanvullende spraak/OCR-functies worden niet aangevraagd. |
-| Systeemvoorkeur voor weergavetaal | en-US |
-| Taal voor oudere, niet-Unicode-programma's | en-US |
-| Uitvoerend gebruikersaccount | Engels eerst in de talenlijst; weergavetaal en standaardtoetsenbord worden ingesteld. Overige talen blijven beschikbaar. |
-| Aanmeldscherm en systeemaccounts | Neemt de internationale instellingen van het uitvoerende account over. |
-| Nieuwe gebruikers | Krijgen diezelfde instellingen als standaard. |
-| Andere bestaande gebruikers | Hun persoonlijke taalvoorkeur wordt niet overschreven. Zij kunnen hun oude taal houden. |
-| Regionale datum- en getalnotatie | Behoudt het bestaande formaat van het uitvoerende account door automatische afleiding uit de weergavetaal uit te schakelen. |
-| Land/regio | Het uitvoerende account houdt zijn regio; kopieren naar systeemaccounts en nieuwe gebruikers neemt die regio mee. |
-| Tijdzone | Blijft ongewijzigd. |
+| Google.Chrome | Installeert voor alle gebruikers; bestaande installatie wordt overgeslagen. |
+| TeamViewer.TeamViewer | Volledige EXE-client via nullsoft; bestaande installatie wordt overgeslagen. |
+| Microsoft.PowerShell | Nieuwste stabiele versie via de machinebrede MSI (wix); oudere versie wordt bijgewerkt. |
 
-Gebruik een aangemeld gebruikersaccount met beheerrechten, niet `SYSTEM`.
-Als je bij de UAC-vraag een ander administratoraccount invoert, is dat andere
-account het uitvoerende account en de bron voor de te kopieren instellingen.
-Windows 11 Pro wordt ondersteund; edities met slechts een toegestane
-weergavetaal worden geweigerd. Het downloaden vereist toegang tot de
-Windows-taalcomponenten; bedrijfsbeleid kan dat beperken.
+WinGet moet beschikbaar zijn via Microsoft App Installer. De pakket- en
+bronvoorwaarden worden automatisch geaccepteerd. De scripts starten geen
+remote TeamViewer-sessie en koppelen geen TeamViewer-account.
 
-Dit verandert niet de oorspronkelijke taal van installatie-/herstelmedia en
-is geen beleid dat alle bestaande gebruikers blijvend tot Engels dwingt.
-Andere geinstalleerde taalpakketten worden niet verwijderd. Bij een fout stopt
-het script met exitcode `1`; al uitgevoerde instellingen worden niet automatisch
-teruggedraaid. Na het oplossen van de fout kun je het script opnieuw uitvoeren.
+## Configuratie
 
-Gebaseerd op de Microsoft-documentatie voor
+Stelt Engels (VS) in voor de systeemvoorkeur, het aanmeldscherm, systeemaccounts,
+nieuwe gebruikers en het uitvoerende account. Installeert zo nodig het volledige
+en-US-weergavetaalpakket, zonder optionele spraak/OCR-functies. Stelt ook de
+systeemlocale voor oudere niet-Unicode-programma's op en-US.
+
+Gebruik -Keyboard USInternational voor US-International of -Keyboard US
+voor normaal US. Zonder parameter is US de standaard; het codeblok op de
+webpagina kiest US-International. Overige talen blijven beschikbaar.
+
+Datum- en getalnotatie blijven behouden. Land/regio van het uitvoerende account
+en tijdzone worden niet aangepast. Het kopieren naar systeemaccounts en nieuwe
+gebruikers neemt de regio-instellingen van het uitvoerende account mee.
+
+Andere bestaande gebruikers behouden hun eigen taalvoorkeur. Als je bij UAC
+een ander administratoraccount invoert, is dat het uitvoerende account.
+Gebruik een aangemeld account, niet SYSTEM. Windows 11-edities met slechts
+een toegestane weergavetaal worden geweigerd.
+
+**Herstart Windows na afloop.** De scripts herstarten niet automatisch.
+Al uitgevoerde stappen worden bij een fout niet teruggedraaid. Na het
+oplossen van de fout kun je het betreffende script opnieuw uitvoeren.
+
+## Fouten en controle
+
+De uitvoer vermeldt het logbestand, onder %LOCALAPPDATA%\JindaOperations\Logs
+van het uitvoerende account. Het configuratiescript meldt de concrete fout
+en de plek in het script. Bij een UAC-fout verschijnt de melding in het
+oorspronkelijke venster, voordat een log kan worden gestart.
+
+Exitcodes: 0 geslaagd, 1 fout, 3010 software geinstalleerd maar herstart nodig.
+Het webvoorbeeld gaat bij 3010 door met configureren en stopt bij overige fouten.
+
+Optioneel ondersteunt elk script -WhatIf: dan geen UAC, downloads,
+software-installatie, logaanmaak of wijzigingen. Het webvoorbeeld voert
+de scripts echt uit, zonder proefrun.
+
+Tests simuleren WinGet, beheerrechten, herstarten onder een andere runtime en
+Windows-instellingen. Ze installeren geen software en veranderen geen taal.
+Voer vanuit deze map in Windows PowerShell 5.1 uit:
+
+~~~powershell
+Invoke-Pester -Script .\tests
+~~~
+
+De runtime-tests kunnen ook in PowerShell 7 met dezelfde Pester-module draaien.
+Een echte UAC-/installatie-/taalwijzigingsronde moet op de doel-pc worden getest.
+
+## Publicatie en bronnen
+
+GitHub Pages publiceert de hoofdmap van main; de twee vaste script-URL's volgen
+de gepubliceerde versie. Er zijn geen losse scripts per programma of instelling.
+
+Microsoft:
+[PowerShell installeren](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows),
+[Windows PowerShell-compatibiliteit](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_compatibility),
 [Install-Language](https://learn.microsoft.com/en-us/powershell/module/languagepackmanagement/install-language),
-[Set-SystemPreferredUILanguage](https://learn.microsoft.com/en-us/powershell/module/languagepackmanagement/set-systempreferreduilanguage),
-[Copy-UserInternationalSettingsToSystem](https://learn.microsoft.com/en-us/powershell/module/international/copy-userinternationalsettingstosystem)
-en [toetsenbordcodes](https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-language-pack-default-values).
-
-## Publicatie
-
-GitHub Pages publiceert vanuit de hoofdmap van `main`. `.nojekyll` zorgt dat
-de bestanden als statische bestanden worden gepubliceerd.
-
-De downloadlink volgt de huidige versie op `main`. Wijzigingen aan het script
-worden na publicatie op dezelfde URL beschikbaar.
-
-## Controle
-
-Voor `install-software.ps1` slagen zeven tests met een gesimuleerde WinGet,
-waaronder bestaande installaties, fouten en het doorlopen na een herstartmelding.
-Dit script en `setup.ps1` zijn ook op syntax en met echte `-WhatIf`-runs
-gecontroleerd in Windows PowerShell 5.1. Een echte software-installatie en
-de volledige gecombineerde uitvoering zijn nog niet op een doel-pc getest.
-
-Het Chrome-script is op syntax en `-WhatIf` gecontroleerd met Windows
-PowerShell 5.1 en PowerShell 7. Het taalscript is bedoeld voor Windows
-PowerShell 5.1: tien tests met gesimuleerde instellingscmdlets en echte
-`-WhatIf`-runs voor beide toetsenborden zijn geslaagd. De gecontroleerde
-taalinstellingen waren voor en na die proefruns gelijk. De scripts zijn niet
-gebruikt om deze ontwikkel-pc te wijzigen;
-een echte installatie/taalomzetting moet nog op een doel-pc worden gecontroleerd.
-
-De tests staan in `tests/set-windows-english.Tests.ps1` en kunnen vanuit de
-repositorymap in Windows PowerShell 5.1 met de meegeleverde Pester worden gestart:
-
-```powershell
-Invoke-Pester -Script .\tests\set-windows-english.Tests.ps1
-```
+[Copy-UserInternationalSettingsToSystem](https://learn.microsoft.com/en-us/powershell/module/international/copy-userinternationalsettingstosystem).
