@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jinda Operations</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #16312c; background: #f3f6f3; }
+    body { max-width: 780px; margin: 64px auto; padding: 0 24px; line-height: 1.65; }
+    h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.15; margin-bottom: 12px; }
+    h2 { margin-top: 36px; }
+    a { color: #14634f; }
+    .button { display: inline-block; padding: 12px 20px; border-radius: 8px; background: #14634f; color: white; text-decoration: none; font-weight: 650; }
+    pre { overflow-x: auto; padding: 18px; border: 1px solid #d5dfd8; border-radius: 8px; background: white; font-size: .9rem; }
+    code { font-family: Consolas, monospace; }
+    footer { margin-top: 44px; border-top: 1px solid #d5dfd8; padding-top: 18px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Jinda Operations</h1>
+    <p>Google Chrome installeren op een Windows 11-pc met PowerShell en WinGet.</p>
+    <p><a class="button" href="install-chrome.ps1" download>Download install-chrome.ps1</a></p>
+    <p>Het script installeert Chrome voor alle gebruikers. Een bestaande installatie wordt overgeslagen. WinGet en toestemming voor installatie met beheerrechten zijn nodig.</p>
+    <h2>1. Downloaden via PowerShell</h2>
+    <pre><code>$scriptPath = Join-Path $env:TEMP 'jinda-install-chrome.ps1'
+Invoke-WebRequest -UseBasicParsing -Uri 'https://acurvers.github.io/jinda-operations/install-chrome.ps1' -OutFile $scriptPath</code></pre>
+    <h2>2. Uitvoeren</h2>
+    <p>Bekijk desgewenst eerst het gedownloade bestand. Start daarna de installatie:</p>
+    <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath</code></pre>
+    <p>De uitvoeringsoptie geldt alleen voor dit proces. De voorwaarden van het pakket en de pakketbron worden automatisch geaccepteerd. Windows kan om beheerrechten vragen.</p>
+    <h2>Eerst een proefrun?</h2>
+    <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -WhatIf</code></pre>
+    <p>Deze proefrun controleert of WinGet beschikbaar is en toont de voorgenomen actie zonder software te installeren.</p>
+  </main>
+  <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
+</body>
+</html>
