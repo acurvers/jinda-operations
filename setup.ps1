@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Installeert Chrome en TeamViewer en stelt Windows standaard in op Engels (VS).
+Installeert Chrome, TeamViewer en PowerShell 7 en stelt Windows in op Engels (VS).
 .DESCRIPTION
 Downloadt de scripts van Jinda Operations en voert ze direct uit.
 Start vanuit Windows PowerShell als administrator. Herstart Windows na afloop.
@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 try {
-    if (-not $PSCmdlet.ShouldProcess('Deze pc', "Chrome en TeamViewer installeren; Windows naar Engels (VS) met $Keyboard")) {
+    if (-not $PSCmdlet.ShouldProcess('Deze pc', "Chrome, TeamViewer en PowerShell 7 installeren; Windows naar Engels (VS) met $Keyboard")) {
         return
     }
     if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess) {

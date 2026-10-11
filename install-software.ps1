@@ -1,9 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Installeert Google Chrome en de volledige TeamViewer-client via WinGet.
+Installeert Google Chrome, TeamViewer en de nieuwste stabiele PowerShell 7 via WinGet.
 .DESCRIPTION
-Installeert voor alle gebruikers; bestaande installaties worden overgeslagen.
+Installeert voor alle gebruikers. Bestaande Chrome/TeamViewer-installaties
+worden overgeslagen; een oudere PowerShell 7 wordt bijgewerkt.
 De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
@@ -22,9 +23,11 @@ function Install-JindaSoftware {
     }
 
     $packages = @(
-        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Extra = @() }
+        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Extra = @('--no-upgrade') }
         # Selecteer de volledige EXE-installer, niet het MSI-updatepakket.
-        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Extra = @('--installer-type', 'nullsoft') }
+        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Extra = @('--no-upgrade', '--installer-type', 'nullsoft') }
+        # Stabiele MSI voor alle gebruikers; laat WinGet oudere versies bijwerken.
+        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Extra = @('--installer-type', 'wix') }
     )
     $restartNeeded = $false
     foreach ($package in $packages) {
@@ -33,7 +36,7 @@ function Install-JindaSoftware {
         }
         $wingetArguments = @(
             'install', '--id', $package.Id, '--exact', '--source', 'winget',
-            '--scope', 'machine', '--silent', '--no-upgrade',
+            '--scope', 'machine', '--silent',
             '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
         ) + $package.Extra
         Write-Host "$($package.Name) installeren via WinGet..."

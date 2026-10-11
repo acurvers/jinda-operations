@@ -5,7 +5,7 @@ PowerShell-scripts voor het inrichten van Windows-pc's.
 ## Alles in een keer
 
 [setup.ps1](https://acurvers.github.io/jinda-operations/setup.ps1) installeert
-**Google Chrome en TeamViewer** en stelt Windows standaard in op **Engels (VS)
+**Google Chrome, TeamViewer en de nieuwste stabiele PowerShell 7** en stelt Windows standaard in op **Engels (VS)
 met een US-International-toetsenbord**. Open **Windows PowerShell als
 administrator** en voer uit:
 
@@ -28,12 +28,39 @@ stopt het met een melding; al uitgevoerde stappen worden niet teruggedraaid.
 Een gemelde benodigde herstart na software-installatie blokkeert de taalstap
 niet. Er wordt niet automatisch opnieuw opgestart.
 
-Alleen Chrome en TeamViewer, zonder taalwijziging:
+### Installatie en configuratie direct achter elkaar
+
+Plak dit hele blok in **Windows PowerShell als administrator**. Het downloadt
+beide scripts en voert ze direct na elkaar uit:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$baseUrl = 'https://acurvers.github.io/jinda-operations'
+$install = Join-Path $env:TEMP 'jinda-install-software.ps1'
+$config = Join-Path $env:TEMP 'jinda-set-windows-english.ps1'
+Invoke-WebRequest -UseBasicParsing "$baseUrl/install-software.ps1" -OutFile $install
+Invoke-WebRequest -UseBasicParsing "$baseUrl/set-windows-english.ps1" -OutFile $config
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $install
+if ($LASTEXITCODE -notin @(0, 3010)) { throw 'Software-installatie mislukt.' }
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $config -Keyboard USInternational
+if ($LASTEXITCODE -ne 0) { throw 'Windows-configuratie mislukt.' }
+```
+
+Herstart Windows na afloop. Windows PowerShell 5.1 (`powershell.exe`) blijft
+beschikbaar voor de taalconfiguratie. Start PowerShell 7 daarna met `pwsh`.
+
+Alleen Chrome, TeamViewer en PowerShell 7, zonder taalwijziging:
 [install-software.ps1](https://acurvers.github.io/jinda-operations/install-software.ps1).
-Beide worden via WinGet voor alle gebruikers geinstalleerd. Reeds aanwezige
-installaties worden overgeslagen. TeamViewer gebruikt de volledige EXE-client
+De pakketten worden via WinGet voor alle gebruikers geinstalleerd. Reeds
+aanwezige Chrome- en TeamViewer-installaties worden overgeslagen. TeamViewer gebruikt de volledige EXE-client
 (`TeamViewer.TeamViewer`, installer-type `nullsoft`). De pakket- en
 bronvoorwaarden worden automatisch geaccepteerd.
+
+PowerShell gebruikt het stabiele pakket `Microsoft.PowerShell` met de
+MSI-installer (`wix`), zonder vastgezette versie. Een oudere PowerShell 7 wordt
+bijgewerkt naar de nieuwste stabiele versie die WinGet aanbiedt. Er wordt geen
+preview geinstalleerd. PowerShell 7 staat naast Windows PowerShell 5.1, zoals
+beschreven in [Microsofts installatiehandleiding](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows).
 
 ## Google Chrome installeren
 
@@ -159,7 +186,7 @@ worden na publicatie op dezelfde URL beschikbaar.
 
 ## Controle
 
-Voor `install-software.ps1` slagen zes tests met een gesimuleerde WinGet,
+Voor `install-software.ps1` slagen zeven tests met een gesimuleerde WinGet,
 waaronder bestaande installaties, fouten en het doorlopen na een herstartmelding.
 Dit script en `setup.ps1` zijn ook op syntax en met echte `-WhatIf`-runs
 gecontroleerd in Windows PowerShell 5.1. Een echte software-installatie en
