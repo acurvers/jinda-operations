@@ -11,8 +11,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
         }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
-        Mock Invoke-RestMethod { @{ sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } }
-        Mock Invoke-WebRequest { $script:initEvents.Add("download:$Uri") }
+        Mock Test-Path { $script:initEvents.Add("validate:$LiteralPath"); $true }
+        Mock Invoke-WebRequest { throw 'Unexpected download' }
         Mock Get-JindaPowerShell {
             if ($script:initLaunches.Count -eq 0) { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
             else { 'C:\Program Files\PowerShell\7\pwsh.exe' }
@@ -24,11 +24,11 @@ Describe 'Initialization orchestrates the two existing scripts' {
         }
     }
 
-    It 'downloads both scripts before installing and reselects PowerShell for configuration' {
+    It 'validates both bundled scripts before installing and reselects PowerShell for configuration' {
         Invoke-JindaInitialization | Should Be 0
         $script:initEvents[0] | Should Be 'choices'
-        $script:initEvents[1] | Should Match '^download:.*install-software.ps1$'
-        $script:initEvents[2] | Should Match '^download:.*set-windows-english.ps1$'
+        $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
+        $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
         $script:initEvents[3] | Should Match '^run:.*install-software.ps1$'
         $script:initEvents[4] | Should Match '^run:.*set-windows-english.ps1$'
         $script:initLaunches[0].Executable | Should Match 'WindowsPowerShell'
@@ -45,50 +45,16 @@ Describe 'Initialization orchestrates the two existing scripts' {
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard US'
     }
 
-    It 'downloads both scripts from the supplied commit without resolving main again' {
-        $sha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-        Invoke-JindaInitialization -SourceCommit $sha | Should Be 0
-        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
-        Assert-MockCalled Invoke-WebRequest -Times 2 -Exactly -Scope It -ParameterFilter {
-            $Uri -like 'https://raw.githubusercontent.com/acurvers/jinda-operations/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/*.ps1'
-        }
-    }
-
-    It 'resolves main only once for a manually started init' {
-        Invoke-JindaInitialization | Should Be 0
-        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Uri -eq 'https://api.github.com/repos/acurvers/jinda-operations/commits/main'
-        }
-        Assert-MockCalled Invoke-WebRequest -Times 2 -Exactly -Scope It -ParameterFilter {
-            $Uri -like 'https://raw.githubusercontent.com/acurvers/jinda-operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/*.ps1'
-        }
-    }
-
-    It 'starts nothing if GitHub cannot resolve a version' {
-        Mock Invoke-RestMethod { throw 'GitHub unavailable' }
-        { Invoke-JindaInitialization } | Should Throw 'GitHub unavailable'
-        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
-        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
-        $script:initLaunches.Count | Should Be 0
-    }
-
-    It 'starts nothing if GitHub returns an invalid version' {
-        Mock Invoke-RestMethod { @{ sha = 'main' } }
-        { Invoke-JindaInitialization } | Should Throw 'geen geldige scriptversie'
-        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
-        $script:initLaunches.Count | Should Be 0
-    }
-
     It 'does not repair WinGet unless requested' {
         Invoke-JindaInitialization | Should Be 0
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
     }
 
-    It 'repairs after both downloads and before starting either child script' {
+    It 'repairs after validating both scripts and before starting either child script' {
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
         $script:initEvents[0] | Should Be 'choices'
-        $script:initEvents[1] | Should Match '^download:.*install-software.ps1$'
-        $script:initEvents[2] | Should Match '^download:.*set-windows-english.ps1$'
+        $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
+        $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
         $script:initEvents[3] | Should Be 'repair'
         $script:initEvents[4] | Should Match '^run:.*install-software.ps1$'
         $script:initEvents[5] | Should Match '^run:.*set-windows-english.ps1$'
@@ -118,12 +84,13 @@ Describe 'Initialization orchestrates the two existing scripts' {
         { Invoke-JindaInitialization } | Should Throw 'Windows-configuratie mislukt'
     }
 
-    It 'never installs when downloading either script fails' {
-        Mock Invoke-WebRequest {
-            if ($Uri -like '*/set-windows-english.ps1') { throw 'Download failed' }
-            $script:initEvents.Add("download:$Uri")
+    It 'never installs when the configuration script is missing from the package' {
+        Mock Test-Path {
+            if ($LiteralPath -like '*/set-windows-english.ps1' -or $LiteralPath -like '*\set-windows-english.ps1') { return $false }
+            $script:initEvents.Add("validate:$LiteralPath")
+            $true
         }
-        { Invoke-JindaInitialization } | Should Throw 'Download failed'
+        { Invoke-JindaInitialization } | Should Throw 'Scriptpakket onvolledig'
         $script:initLaunches.Count | Should Be 0
     }
 
@@ -134,10 +101,9 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
         Assert-MockCalled Get-JindaSetupOptions -Times 0 -Exactly -Scope It
-        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
-    It 'skips the installer download, execution and repair when apps are declined' {
+    It 'skips installer validation, execution and repair when apps are declined' {
         Mock Get-JindaSetupOptions {
             [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $true; PowerShellRemoting = $false; LanIPAddress = '10.20.30.40' }
         }
@@ -146,7 +112,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches[0].Path | Should Match 'set-windows-english.ps1$'
         ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -LanIPAddress 10.20.30.40'
         [bool]$script:initLaunches[0].NonInteractive | Should Be $true
-        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*/install-software.ps1' }
+        Assert-MockCalled Test-Path -Times 0 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*install-software.ps1' }
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
     }
 
@@ -176,7 +142,6 @@ $script:initEntry = [scriptblock]::Create($entryBody.Replace('$PSCommandPath', "
 
 Describe 'Initialization entry point forwards the repair switch' {
     BeforeEach {
-        $SourceCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
         Mock Get-JindaPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
         Mock Get-JindaCurrentPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
         Mock Test-JindaAdministrator { $true }
@@ -199,7 +164,6 @@ Describe 'Initialization entry point forwards the repair switch' {
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
             $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
             $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
-            ($ScriptArguments -join ' ') -match '-SourceCommit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' -and
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
             $ScriptArguments -contains '10.20.30.40'
         }
@@ -211,16 +175,13 @@ Describe 'Initialization entry point forwards the repair switch' {
         $RepairWinGet = $true
         & $script:initEntry
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
-            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
-            ($ScriptArguments -join ' ') -match '-SourceCommit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet'
         }
     }
 
     It 'passes the switch into initialization once already elevated' {
         $RepairWinGet = $true
         & $script:initEntry
-        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter {
-            $RepairWinGet -and $SourceCommit -eq 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-        }
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter { $RepairWinGet }
     }
 }

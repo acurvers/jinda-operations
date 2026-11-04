@@ -23,6 +23,11 @@ Describe 'Pages publication must prove deployment and actual downloads' {
             return 'expected'
         }
         Mock Start-Sleep {}
+        Mock Get-JindaArchiveBlobShas {
+            if ($script:publicationDownloadError) { throw 'HTTP 404' }
+            $hash = if ($script:publicationMismatch) { 'stale' } else { 'expected' }
+            return @{ 'init.ps1' = $hash; 'install-software.ps1' = $hash; 'set-windows-english.ps1' = $hash }
+        }
     }
     It 'confirms the Pages web page for the requested commit' {
         $result = Test-JindaPagesPublication -CommitSha $script:publicationSha
@@ -68,10 +73,9 @@ Describe 'Pages publication must prove deployment and actual downloads' {
         $result = Test-JindaPagesPublication -CommitSha $script:publicationSha -ScriptsOnly
         $result.Verified | Should Be $true
         $result.Files | Should Be 3
-        $result.Source | Should Be 'GitHub'
-        Assert-MockCalled Get-JindaPublicBlobSha -Times 3 -Exactly -Scope It -ParameterFilter {
-            $Uri -like 'https://raw.githubusercontent.com/acurvers/jinda-operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/*.ps1'
-        }
+        $result.Source | Should Be 'GitHub ZIP'
+        Assert-MockCalled Get-JindaArchiveBlobShas -Times 1 -Exactly -Scope It
+        Assert-MockCalled Get-JindaPublicBlobSha -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*/actions/*' }
         Assert-MockCalled Start-Sleep -Times 0 -Exactly -Scope It
     }

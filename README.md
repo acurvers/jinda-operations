@@ -5,33 +5,34 @@ Twee vaste scripts voor Windows 11 Pro. Nieuwe software voegen we toe aan
 [set-windows-english.ps1](set-windows-english.ps1).
 
 De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat de
-eenregelige startopdracht voor [init.ps1](init.ps1). Init downloadt en start
+eenregelige startopdracht voor [init.ps1](init.ps1). Init start
 de gekozen installatie en configuratie achter elkaar; de inhoud blijft in de twee vaste scripts.
 
 De scripts komen rechtstreeks uit GitHub, onafhankelijk van GitHub Pages.
-De startopdracht kiest eenmaal de nieuwste commit op main en gebruikt diezelfde
-versie voor init en beide deelscripts. Alleen de instructiewebpagina gebruikt Pages.
+De startopdracht haalt eenmaal het ZIP-pakket van main op en gebruikt daaruit
+init en beide deelscripts. Zo horen alle scripts bij dezelfde versie, zonder
+GitHub API-verzoek. Alleen de instructiewebpagina gebruikt Pages.
 Een fout bij het ophalen stopt de uitvoering; er wordt geen oud lokaal script gestart.
 
 ## Starten
 
 ~~~powershell
-& { $ErrorActionPreference = "Stop"; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = "$env:TEMP\jinda-init.ps1"; iwr "https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1" -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s }
+& { $ErrorActionPreference = "Stop"; $p = "$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))"; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile "$p.zip" -TimeoutSec 60; Expand-Archive -LiteralPath "$p.zip" -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$p\jinda-operations-main\init.ps1" }
 ~~~
 
-De download moet slagen voordat init start. De startopdracht voert de scripts
+Download en uitpakken moeten slagen voordat init start. De startopdracht voert de scripts
 direct uit. Voeg voor een normaal US-toetsenbord -Keyboard US toe na -File $p,
 voor de afsluitende accolade; standaard kiest init US-International.
 
 ## Keuzes vooraf
 
-Na de eventuele UAC-vraag stelt init alle vragen voordat downloads of wijzigingen beginnen:
+Na de eventuele UAC-vraag stelt init alle vragen voordat apps worden gedownload of Windows wordt aangepast:
 
 **Keuzes bij de start**
 
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
-| Apps downloaden en installeren? | Ja | Geen installatiescript downloaden/starten en geen WinGet-herstel |
+| Apps downloaden en installeren? | Ja | Geen apps downloaden/installeren en geen WinGet-herstel |
 | Remote Desktop (RDP) inschakelen op het LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | PowerShell-remoting (WinRM) inschakelen op het LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 
@@ -51,13 +52,13 @@ Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
 `-RepairWinGet` na `-File $p`:
 
 ~~~powershell
-& { $ErrorActionPreference = "Stop"; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = "$env:TEMP\jinda-init.ps1"; iwr "https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1" -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s -RepairWinGet }
+& { $ErrorActionPreference = "Stop"; $p = "$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))"; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile "$p.zip" -TimeoutSec 60; Expand-Archive -LiteralPath "$p.zip" -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$p\jinda-operations-main\init.ps1" -RepairWinGet }
 ~~~
 
 Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGallery
 voor het uitvoerende account en voert `Repair-WinGetPackageManager -Force -Latest`
 uit. In Windows PowerShell 5.1 wordt zo nodig eerst de NuGet-provider toegevoegd.
-Als apps installeren is gekozen, herstelt init na het downloaden van beide scripts WinGet en controleert met
+Als apps installeren is gekozen, herstelt init na de beginvragen WinGet en controleert met
 `winget show` of TeamViewer via de winget-bron gevonden wordt. Pas daarna beginnen
 installatie en configuratie; bij een herstel- of bronfout stopt init.
 Zonder de switch wordt geen herstel uitgevoerd. Ook met de switch doet `-WhatIf`
@@ -83,7 +84,7 @@ Er is geen extra configuratiescript nodig.
 
 Init vraagt eenmaal om beheerrechten; de twee deelscripts erven die rechten.
 Start je al in een administratorvenster, dan volgt geen extra UAC-vraag.
-Init downloadt eerst de benodigde scripts en voert ze daarna een voor een uit.
+De startopdracht downloadt eerst het complete scriptpakket. Init voert de scripts daarna een voor een uit.
 Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
 Alleen een fout bij Google Chrome geeft een waarschuwing en laat de overige apps
 en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een andere
@@ -221,7 +222,7 @@ Een echte UAC-/installatie-/taalwijzigingsronde moet op de doel-pc worden getest
 ## Publicatie en bronnen
 
 GitHub Pages publiceert alleen de instructiewebpagina. De startopdracht haalt init
-en de twee vaste scripts rechtstreeks uit dezelfde commit op main. Er zijn geen
+en de twee vaste scripts rechtstreeks uit een GitHub-bronarchief van main. Er zijn geen
 losse scripts per programma of instelling.
 
 ### Verplichte controle na publicatie
@@ -232,9 +233,11 @@ Controleer de drie scripts rechtstreeks via GitHub met de volledige commit-SHA:
 .\tools\Test-PagesPublication.ps1 -ScriptsOnly -CommitSha <volledige-40-tekens-commit-SHA>
 ~~~
 
-Deze alleen-lezen-controle vergelijkt de ontvangen bytes van `init.ps1`,
+Deze alleen-lezen-controle vergelijkt de bytes in het GitHub-ZIP-pakket van `init.ps1`,
 `install-software.ps1` en `set-windows-english.ps1` met de opgegeven GitHub-commit.
-Exitcode 0 bevestigt de scriptdownloads. Er is geen Pages-build, token of extra software nodig.
+Exitcode 0 bevestigt de scriptdownloads. De inrichting zelf gebruikt geen API of token.
+De publicatiecontrole gebruikt de GitHub API om met de commit te vergelijken; bij
+veel controles kan een beheerder daarvoor tijdelijk `GH_TOKEN` meegeven.
 
 Alleen als de instructiewebpagina is gewijzigd, controleer je ook Pages:
 

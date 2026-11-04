@@ -4,8 +4,8 @@
 Start de Jinda-inrichting: keuzes vooraf, optioneel software, daarna Windows-configuratie.
 .DESCRIPTION
 Vraagt zo nodig eenmaal administratorrechten en verzamelt alle keuzes vooraf.
-Downloadt de benodigde vaste scripts voordat iets wordt uitgevoerd en kiest
-opnieuw PowerShell na de optionele software-installatie.
+Gebruikt de twee vaste scripts uit hetzelfde GitHub-ZIP-pakket en kiest opnieuw
+PowerShell na de optionele software-installatie.
 .PARAMETER Keyboard
 USInternational (standaard) of US.
 .PARAMETER RepairWinGet
@@ -19,9 +19,6 @@ Ask (standaard), Yes of No. Remote Desktop inschakelen voor het gekozen LAN.
 Ask (standaard), Yes of No. Windows PowerShell-remoting (WinRM) inschakelen op het LAN.
 .PARAMETER LanIPAddress
 Optioneel actief IPv4-adres van de doel-pc. Zonder dit adres wordt het LAN aan het begin gekozen.
-.PARAMETER SourceCommit
-Vaste GitHub-commit voor de downloads. De startopdracht geeft dezelfde commit door
-waaruit init.ps1 is opgehaald. Bij handmatig starten wordt main eenmaal opgezocht.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -32,7 +29,6 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
     [string]$LanIPAddress,
-    [ValidatePattern('^([0-9a-fA-F]{40})?$')][string]$SourceCommit,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -283,31 +279,25 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallApps = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
-        [string]$LanIPAddress,
-        [ValidatePattern('^([0-9a-fA-F]{40})?$')][string]$SourceCommit
+        [string]$LanIPAddress
     )
 
     $ErrorActionPreference = 'Stop'
     if (-not $PSCmdlet.ShouldProcess('Deze pc', 'Jinda-software installeren en Windows configureren')) { return 0 }
 
-    # Collect every choice before downloads, repair or installation. Children never prompt.
+    # The start command downloads one complete source archive. Children never prompt.
     $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
-    if (-not $SourceCommit) {
-        $revision = Invoke-RestMethod -Uri 'https://api.github.com/repos/acurvers/jinda-operations/commits/main' -TimeoutSec 20 -ErrorAction Stop
-        if ([string]$revision.sha -notmatch '^[0-9a-fA-F]{40}$') { throw 'GitHub gaf geen geldige scriptversie terug. Niets is gestart.' }
-        $SourceCommit = [string]$revision.sha
-    }
-    $baseUrl = "https://raw.githubusercontent.com/acurvers/jinda-operations/$SourceCommit"
-    Write-Host "Scriptversie: $SourceCommit (rechtstreeks uit GitHub)."
-    $folder = Join-Path $env:TEMP ('jinda-' + [guid]::NewGuid().ToString('N'))
-    $null = New-Item -ItemType Directory -Path $folder
+    $folder = $PSScriptRoot
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
-    Write-Host 'Benodigde scripts downloaden...'
-    if ($options.InstallApps) {
-        Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/install-software.ps1" -OutFile $install -TimeoutSec 60 -ErrorAction Stop
+    $requiredScripts = @($config)
+    if ($options.InstallApps) { $requiredScripts = @($install, $config) }
+    foreach ($path in $requiredScripts) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Scriptpakket onvolledig: $path ontbreekt. Gebruik de nieuwe startopdracht uit de GitHub README."
+        }
     }
-    Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/set-windows-english.ps1" -OutFile $config -TimeoutSec 60 -ErrorAction Stop
+    Write-Host "Scripts gebruiken uit GitHub-pakket: $folder"
 
     $installCode = 0
     if ($options.InstallApps) {
@@ -337,9 +327,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting)
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
-        if ($SourceCommit) { $scriptArguments += @('-SourceCommit', $SourceCommit) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress -SourceCommit $SourceCommit
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
         }
         exit $exitCode
     }

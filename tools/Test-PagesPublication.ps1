@@ -4,7 +4,7 @@
 Controleert directe scriptdownloads of de Pages-webpagina voor een exacte commit.
 .DESCRIPTION
 Alleen lezen: geen installatie, herstart, publicatie of automatische retry van een
-geannuleerde workflow. Met -ScriptsOnly worden alleen de drie directe GitHub-downloads
+geannuleerde workflow. Met -ScriptsOnly worden de drie scripts uit het GitHub-ZIP
 byte voor byte gecontroleerd, zonder Pages. Zonder die switch wordt de geslaagde
 Pages-run plus index.html gecontroleerd. Exitcode 0 bevestigt de gekozen controle.
 #>
@@ -44,6 +44,29 @@ function Get-JindaPublicBlobSha {
     finally { $buffer.Dispose() }
 }
 
+function Get-JindaArchiveBlobShas {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip' -TimeoutSec 60 -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression
+    $response.RawContentStream.Position = 0
+    $archive = [IO.Compression.ZipArchive]::new($response.RawContentStream, [IO.Compression.ZipArchiveMode]::Read)
+    try {
+        $hashes = @{}
+        foreach ($path in @('init.ps1', 'install-software.ps1', 'set-windows-english.ps1')) {
+            $entry = $archive.GetEntry("jinda-operations-main/$path")
+            if (-not $entry) { throw "Script ontbreekt in GitHub-ZIP: $path" }
+            $stream = $entry.Open()
+            $buffer = New-Object IO.MemoryStream
+            try {
+                $stream.CopyTo($buffer)
+                $hashes[$path] = Get-JindaGitBlobSha -Bytes $buffer.ToArray()
+            }
+            finally { $stream.Dispose(); $buffer.Dispose() }
+        }
+        return $hashes
+    }
+    finally { $archive.Dispose() }
+}
+
 function Test-JindaPagesPublication {
     [CmdletBinding()]
     param(
@@ -55,6 +78,8 @@ function Test-JindaPagesPublication {
     $api = 'https://api.github.com/repos/acurvers/jinda-operations'
     $site = 'https://acurvers.github.io/jinda-operations'
     $headers = @{ Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+    # Optional for maintainers checking publication repeatedly; setup needs no API.
+    if ($env:GH_TOKEN) { $headers.Authorization = 'Bearer ' + $env:GH_TOKEN }
     $paths = if ($ScriptsOnly) { @('init.ps1', 'install-software.ps1', 'set-windows-english.ps1') } else { @('index.html') }
     $tree = Invoke-RestMethod -Uri "$api/git/trees/${CommitSha}?recursive=1" -Headers $headers -TimeoutSec 20 -ErrorAction Stop
     if ($tree.truncated) { throw 'Git-bestandenlijst is onvolledig; publicatie niet bevestigd.' }
@@ -66,14 +91,14 @@ function Test-JindaPagesPublication {
     }
 
     if ($ScriptsOnly) {
+        $downloaded = Get-JindaArchiveBlobShas
         foreach ($path in $paths) {
-            $url = "https://raw.githubusercontent.com/acurvers/jinda-operations/$CommitSha/$path"
-            if ((Get-JindaPublicBlobSha -Uri $url) -ne $expected[$path]) {
+            if ($downloaded[$path] -ne $expected[$path]) {
                 throw "GitHub-download $path wijkt af van de gevraagde commit."
             }
         }
         return [pscustomobject]@{
-            Verified = $true; Commit = $CommitSha; Source = 'GitHub'; Files = $paths.Count
+            Verified = $true; Commit = $CommitSha; Source = 'GitHub ZIP'; Files = $paths.Count
             CheckedAtUtc = [DateTime]::UtcNow.ToString('o')
         }
     }
