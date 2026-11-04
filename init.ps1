@@ -7,11 +7,15 @@ Vraagt zo nodig eenmaal administratorrechten. Downloadt beide vaste scripts
 voordat iets wordt uitgevoerd en kiest opnieuw PowerShell na de software-installatie.
 .PARAMETER Keyboard
 USInternational (standaard) of US.
+.PARAMETER RepairWinGet
+Herstelt WinGet met Microsoft.WinGet.Client en controleert de winget-bron
+voordat de software-installatie begint. Alleen actief als deze switch is opgegeven.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [ValidateSet('US', 'USInternational')]
     [string]$Keyboard = 'USInternational',
+    [switch]$RepairWinGet,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -152,11 +156,44 @@ function Invoke-JindaManagedScript {
 }
 # END shared runtime.
 
+function Repair-JindaWinGet {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $ErrorActionPreference = 'Stop'
+    if (-not $PSCmdlet.ShouldProcess('Deze pc', 'WinGet herstellen en bijwerken naar de nieuwste stabiele versie')) { return }
+
+    Write-Host 'WinGet herstellen met de officiele Microsoft-module...'
+    # Windows PowerShell 5.1 may still need the NuGet provider to use PSGallery.
+    if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $nuget = Get-PackageProvider -Name NuGet -ListAvailable -ErrorAction SilentlyContinue |
+            Where-Object { [version]$_.Version -ge [version]'2.8.5.201' }
+        if (-not $nuget) {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force -ErrorAction Stop | Out-Host
+        }
+    }
+    Install-Module -Name Microsoft.WinGet.Client -Repository PSGallery -Scope CurrentUser -Force -ErrorAction Stop | Out-Host
+    Import-Module -Name Microsoft.WinGet.Client -Force -ErrorAction Stop
+    Repair-WinGetPackageManager -Force -Latest -Verbose -ErrorAction Stop | Out-Host
+
+    Write-Host 'WinGet-bron controleren met Google Chrome...'
+    $winget = (Get-Command winget.exe -CommandType Application -ErrorAction Stop).Source
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $winget show --id Google.Chrome --exact --source winget --accept-source-agreements --disable-interactivity | Out-Host
+    $sourceCode = $LASTEXITCODE
+    if ($sourceCode -ne 0) {
+        throw "WinGet-bron blijft onbruikbaar na herstel (exitcode $sourceCode). Installatie en configuratie zijn niet gestart."
+    }
+    Write-Host 'WinGet-herstel en broncontrole geslaagd.'
+}
+
 function Invoke-JindaInitialization {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [ValidateSet('US', 'USInternational')]
-        [string]$Keyboard = 'USInternational'
+        [string]$Keyboard = 'USInternational',
+        [switch]$RepairWinGet
     )
 
     $ErrorActionPreference = 'Stop'
@@ -170,6 +207,8 @@ function Invoke-JindaInitialization {
     Write-Host 'Installatie- en configuratiescript downloaden...'
     Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/install-software.ps1" -OutFile $install -ErrorAction Stop
     Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/set-windows-english.ps1" -OutFile $config -ErrorAction Stop
+
+    if ($RepairWinGet) { Repair-JindaWinGet }
 
     Write-Host 'Stap 1/2: software installeren.'
     $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install
@@ -187,8 +226,10 @@ function Invoke-JindaInitialization {
 # Dot-sourcing defines functions only, for tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments @('-Keyboard', $Keyboard) -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard
+        $scriptArguments = @('-Keyboard', $Keyboard)
+        if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
+        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet
         }
         exit $exitCode
     }

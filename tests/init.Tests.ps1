@@ -6,6 +6,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches = New-Object 'System.Collections.Generic.List[object]'
         $script:initExitCodes = @(0, 0)
         Mock New-Item {}
+        Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
         Mock Invoke-WebRequest { $script:initEvents.Add("download:$Uri") }
         Mock Get-JindaPowerShell {
             if ($script:initLaunches.Count -eq 0) { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
@@ -35,6 +36,27 @@ Describe 'Initialization orchestrates the two existing scripts' {
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard US'
     }
 
+    It 'does not repair WinGet unless requested' {
+        Invoke-JindaInitialization | Should Be 0
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+    }
+
+    It 'repairs after both downloads and before starting either child script' {
+        Invoke-JindaInitialization -RepairWinGet | Should Be 0
+        $script:initEvents[0] | Should Match '^download:.*install-software.ps1$'
+        $script:initEvents[1] | Should Match '^download:.*set-windows-english.ps1$'
+        $script:initEvents[2] | Should Be 'repair'
+        $script:initEvents[3] | Should Match '^run:.*install-software.ps1$'
+        $script:initEvents[4] | Should Match '^run:.*set-windows-english.ps1$'
+        Assert-MockCalled Repair-JindaWinGet -Times 1 -Exactly -Scope It
+    }
+
+    It 'starts neither installation nor configuration when repair fails' {
+        Mock Repair-JindaWinGet { throw 'Repair failed' }
+        { Invoke-JindaInitialization -RepairWinGet } | Should Throw 'Repair failed'
+        $script:initLaunches.Count | Should Be 0
+    }
+
     It 'continues with configuration after a software restart requirement and preserves code 3010' {
         $script:initExitCodes = @(3010, 0)
         Invoke-JindaInitialization | Should Be 3010
@@ -59,9 +81,57 @@ Describe 'Initialization orchestrates the two existing scripts' {
     }
 
     It 'has no downloads, process launches or filesystem writes during WhatIf' {
-        Invoke-JindaInitialization -WhatIf | Should Be 0
+        Invoke-JindaInitialization -RepairWinGet -WhatIf | Should Be 0
         Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+    }
+}
+
+# Exercise the actual entry-point statements without terminating the test host.
+$initAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path (Split-Path -Parent $PSScriptRoot) 'init.ps1'), [ref]$null, [ref]$null)
+$entryTry = $initAst.EndBlock.Statements[-1].Clauses[0].Item2.Statements[0]
+$entryBody = ($entryTry.Body.Statements | Where-Object { $_ -isnot [Management.Automation.Language.ExitStatementAst] } | ForEach-Object { $_.Extent.Text }) -join "`n"
+# An anonymous scriptblock has no PSCommandPath; supply the path a real file has.
+$script:initEntry = [scriptblock]::Create($entryBody.Replace('$PSCommandPath', "'C:\Test Folder\init.ps1'"))
+
+Describe 'Initialization entry point forwards the repair switch' {
+    BeforeEach {
+        Mock Get-JindaPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
+        Mock Get-JindaCurrentPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
+        Mock Test-JindaAdministrator { $true }
+        Mock Invoke-JindaChildProcess { 0 }
+        Mock New-Item {}
+        Mock Start-Transcript {}
+        Mock Stop-Transcript {}
+        Mock Invoke-JindaInitialization { 0 }
+    }
+
+    It 'keeps the switch through an administrator relaunch' {
+        Mock Test-JindaAdministrator { $false }
+        $RepairWinGet = $true
+        $Keyboard = 'US'
+        & $script:initEntry
+        Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
+            $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US'
+        }
+        Assert-MockCalled Invoke-JindaInitialization -Times 0 -Exactly -Scope It
+    }
+
+    It 'keeps the switch through a PowerShell runtime change' {
+        Mock Get-JindaCurrentPowerShell { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
+        $RepairWinGet = $true
+        & $script:initEntry
+        Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
+            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet'
+        }
+    }
+
+    It 'passes the switch into initialization once already elevated' {
+        $RepairWinGet = $true
+        & $script:initEntry
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter { $RepairWinGet }
     }
 }

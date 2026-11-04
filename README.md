@@ -18,6 +18,22 @@ De download moet slagen voordat init start. De startopdracht voert de scripts
 direct uit. Voeg voor een normaal US-toetsenbord -Keyboard US toe na -File $p,
 voor de afsluitende accolade; standaard kiest init US-International.
 
+Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
+`-RepairWinGet` na `-File $p`:
+
+~~~powershell
+& { $p = "$env:TEMP\jinda-init.ps1"; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -RepairWinGet }
+~~~
+
+Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGallery
+voor het uitvoerende account en voert `Repair-WinGetPackageManager -Force -Latest`
+uit. In Windows PowerShell 5.1 wordt zo nodig eerst de NuGet-provider toegevoegd.
+Na het downloaden van beide scripts herstelt init WinGet en controleert met
+`winget show` of Chrome via de winget-bron gevonden wordt. Pas daarna beginnen
+installatie en configuratie; bij een herstel- of bronfout stopt init.
+Zonder de switch wordt geen herstel uitgevoerd. Ook met de switch doet `-WhatIf`
+geen wijzigingen. Zie de [Microsoft-herstelinstructies](https://learn.microsoft.com/en-us/windows/package-manager/winget/troubleshooting).
+
 ## Uitvoering
 
 Init en de twee deelscripts vragen zo nodig administratorrechten via Windows UAC en
