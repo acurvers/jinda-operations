@@ -73,14 +73,14 @@ Describe 'LAN selection at startup' {
     }
 
     It 'rejects inactive addresses and IPv6' {
-        { Select-JindaLanAddress -Address '10.20.30.99' } | Should Throw 'niet eenduidig actief'
+        { Select-JindaLanAddress -Address '10.20.30.99' } | Should Throw 'exactly one active interface'
         { Select-JindaLanAddress -Address '::1' } | Should Throw 'IPv4'
     }
 
     It 'does not select loopback or APIPA as the LAN' {
         $script:addresses[0].IPAddress = '127.0.0.1'
-        { Select-JindaLanAddress } | Should Throw 'Geen actief IPv4-LAN'
+        { Select-JindaLanAddress } | Should Throw 'No active IPv4 LAN'
         $script:addresses[0].IPAddress = '169.254.1.2'
-        { Select-JindaLanAddress } | Should Throw 'Geen actief IPv4-LAN'
+        { Select-JindaLanAddress } | Should Throw 'No active IPv4 LAN'
     }
 }

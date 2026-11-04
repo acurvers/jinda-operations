@@ -63,7 +63,7 @@ Describe 'Optional WinGet repair' {
 
     It 'rejects a still broken source even when repair reported success' {
         $script:sourceExitCode = -1978335217
-        { Repair-JindaWinGet } | Should Throw 'WinGet-bron blijft onbruikbaar na herstel'
+        { Repair-JindaWinGet } | Should Throw 'The WinGet source is still unavailable after repair'
     }
 
     It 'does not install modules or touch WinGet during WhatIf' {

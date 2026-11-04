@@ -105,7 +105,7 @@ Describe 'Preview and target validation without system changes' {
 
     It 'refuses a ping rule controlled by Group Policy before making changes' {
         $global:LanRemoteAccessFixturePingPolicy = $true
-        { Get-LanRemoteAccessPlan -EnableWinRM -Address '192.168.50.200' } | Should Throw 'centraal beheerd'
+        { Get-LanRemoteAccessPlan -EnableWinRM -Address '192.168.50.200' } | Should Throw 'centrally managed'
         Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
     }
     It 'rejects an RDP port conflicting with WinRM' {

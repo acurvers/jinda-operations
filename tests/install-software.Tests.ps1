@@ -52,8 +52,8 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'stops the run if the PowerShell extension fails' {
-        Mock Install-JindaVSCodePowerShellExtension { throw 'VS Code: PowerShell-extensie installeren is mislukt' }
-        { Install-JindaSoftware } | Should Throw 'PowerShell-extensie installeren is mislukt'
+        Mock Install-JindaVSCodePowerShellExtension { throw 'VS Code: PowerShell extension installation failed' }
+        { Install-JindaSoftware } | Should Throw 'PowerShell extension installation failed'
         $script:wingetCalls.Count | Should Be 4
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
     }
@@ -70,7 +70,7 @@ Describe 'All requested Jinda applications' {
         Install-JindaSoftware -WarningVariable warnings | Should Be $false
         $script:wingetCalls.Count | Should Be 15
         ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
-        ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*verder'
+        ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*continue'
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
 
@@ -84,7 +84,7 @@ Describe 'All requested Jinda applications' {
     It 'stops on the same source error in TeamViewer after allowing the Chrome error' {
         $script:wingetExitCodes[0] = -1978335217
         $script:wingetExitCodes[1] = -1978335217
-        { Install-JindaSoftware } | Should Throw 'TeamViewer: WinGet is mislukt'
+        { Install-JindaSoftware } | Should Throw 'TeamViewer: WinGet failed'
         $script:wingetCalls.Count | Should Be 2
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
     }
@@ -94,7 +94,7 @@ Describe 'All requested Jinda applications' {
             $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
             $script:wingetExitCodes = @(0) * 15
             $script:wingetExitCodes[$failedIndex] = 1
-            { Install-JindaSoftware } | Should Throw 'WinGet is mislukt'
+            { Install-JindaSoftware } | Should Throw 'WinGet failed'
             $script:wingetCalls.Count | Should Be ($failedIndex + 1)
         }
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
@@ -109,7 +109,7 @@ Describe 'All requested Jinda applications' {
 
     It 'reports a PowerShell installation failure after the other packages succeed' {
         $script:wingetExitCodes = @(0, 0, 1)
-        { Install-JindaSoftware } | Should Throw 'PowerShell 7: WinGet is mislukt'
+        { Install-JindaSoftware } | Should Throw 'PowerShell 7: WinGet failed'
         $script:wingetCalls.Count | Should Be 3
     }
 
@@ -120,7 +120,7 @@ Describe 'All requested Jinda applications' {
 
     It 'reports missing WinGet before attempting any package' {
         Mock Get-Command { $null } -ParameterFilter { $Name -eq 'winget.exe' }
-        { Install-JindaSoftware } | Should Throw 'WinGet ontbreekt'
+        { Install-JindaSoftware } | Should Throw 'WinGet is missing'
         $script:wingetCalls.Count | Should Be 0
     }
 

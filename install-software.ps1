@@ -1,14 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Installeert de Jinda-apps via WinGet en de officiele Yodeck Windows-installer.
+Install Jinda apps using WinGet and the official Yodeck Windows installer.
 .DESCRIPTION
-Installeert waar ondersteund voor alle gebruikers. Bestaande WinGet-apps
-worden bijgewerkt als de gekozen bron een nieuwere versie aanbiedt.
-Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
-De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
-Bij een Chrome-fout gaat de installatie verder met een waarschuwing.
-Fouten bij alle andere apps stoppen de installatie.
+Installs for all users where supported. Existing WinGet apps are updated when
+a newer version is available from the selected source.
+Requests administrator privileges and selects the latest installed stable PowerShell 7+.
+Package and source agreements are accepted automatically.
+A Chrome failure produces a warning and installation continues.
+Failures for all other apps stop installation.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param([Parameter(DontShow = $true)][switch]$RuntimeReady)
@@ -61,7 +61,7 @@ function Get-JindaPowerShellCandidates {
             if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne $nativeMachine) { continue }
             [pscustomobject]@{ Path = $path; Version = $version }
         }
-        catch { Write-Verbose "PowerShell-kandidaat overgeslagen: $path ($($_.Exception.Message))" }
+        catch { Write-Verbose "Skipped PowerShell candidate: $path ($($_.Exception.Message))" }
         finally { if ($reader) { $reader.Dispose() } }
     }
 }
@@ -93,7 +93,7 @@ function Invoke-JindaChildProcess {
     if ($Elevate) {
         # Start-Process joins its arguments, so explicitly quote paths and values.
         if (@($arguments | Where-Object { $_ -match '["\r\n]' }).Count) {
-            throw 'Een scriptpad of argument bevat ongeldige tekens.'
+            throw 'A script path or argument contains invalid characters.'
         }
         $argumentLine = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
         try {
@@ -101,7 +101,7 @@ function Invoke-JindaChildProcess {
             return [int]$process.ExitCode
         }
         catch {
-            throw "Starten als administrator is niet gelukt. Accepteer de Windows UAC-vraag. $($_.Exception.Message)"
+            throw "Could not start as administrator. Accept the Windows UAC prompt. $($_.Exception.Message)"
         }
     }
     $PSNativeCommandUseErrorActionPreference = $false
@@ -120,12 +120,12 @@ function Invoke-JindaManagedScript {
     )
     $ErrorActionPreference = 'Stop'
     # WhatIf causes no elevation, download, log creation or settings changes.
-    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Uitvoeren: $(Split-Path -Leaf $ScriptPath) met beheerrechten")) { return 0 }
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Run $(Split-Path -Leaf $ScriptPath) as administrator")) { return 0 }
     $executable = Get-JindaPowerShell -WindowsPowerShell:$WindowsPowerShell
     $administrator = Test-JindaAdministrator
     if (-not $administrator -or (Get-JindaCurrentPowerShell) -ne $executable) {
-        if ($RuntimeReady) { throw 'De herstart heeft niet de vereiste beheerrechten of PowerShell-versie opgeleverd.' }
-        Write-Host "Starten met beheerrechten via $executable"
+        if ($RuntimeReady) { throw 'The relaunched process does not have the required administrator privileges or PowerShell version.' }
+        Write-Host "Starting with administrator privileges using $executable"
         return Invoke-JindaChildProcess -Executable $executable -ScriptPath $ScriptPath -ScriptArguments ($ScriptArguments + @('-RuntimeReady')) -Elevate:(-not $administrator)
     }
     $transcriptStarted = $false
@@ -137,12 +137,12 @@ function Invoke-JindaManagedScript {
         $logPath = Join-Path $logFolder $logName
         $null = Start-Transcript -LiteralPath $logPath -Force
         $transcriptStarted = $true
-        Write-Host "Logbestand: $logPath"
-        Write-Host "PowerShell $($PSVersionTable.PSVersion); administratorrechten actief."
+        Write-Host "Log file: $logPath"
+        Write-Host "PowerShell $($PSVersionTable.PSVersion); administrator privileges active."
         return (& $Work)
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host $_.ScriptStackTrace
         if ($logPath) { Write-Host "Details: $logPath" }
         return 1
@@ -166,7 +166,7 @@ function Get-JindaVSCodeCliPath {
     }
     $command = Get-Command -Name 'code.cmd' -CommandType Application -ErrorAction SilentlyContinue
     if ($command) { return $command.Source }
-    throw 'VS Code: code.cmd is na installatie niet gevonden.'
+    throw 'VS Code: code.cmd was not found after installation.'
 }
 
 function Install-JindaVSCodePowerShellExtension {
@@ -178,21 +178,21 @@ function Install-JindaVSCodePowerShellExtension {
     if (-not $PSCmdlet.ShouldProcess('VS Code: ms-vscode.PowerShell', 'Install or update the PowerShell extension')) { return }
     $cli = Get-JindaVSCodeCliPath
     $extensionId = 'ms-vscode.PowerShell'
-    Write-Host 'PowerShell-extensie voor VS Code installeren of bijwerken voor het uitvoerende account...'
+    Write-Host 'Installing or updating the VS Code PowerShell extension for the current account...'
     & $cli --install-extension $extensionId --force | Out-Host
     $installExitCode = $LASTEXITCODE
     if ($installExitCode -ne 0) {
-        throw "VS Code: PowerShell-extensie installeren is mislukt (exitcode $installExitCode)."
+        throw "VS Code: PowerShell extension installation failed (exit code $installExitCode)."
     }
     $installed = @(& $cli --list-extensions)
     $verifyExitCode = $LASTEXITCODE
     if ($verifyExitCode -ne 0) {
-        throw "VS Code: extensies controleren is mislukt (exitcode $verifyExitCode)."
+        throw "VS Code: extension verification failed (exit code $verifyExitCode)."
     }
     if (-not ($installed | Where-Object { ([string]$_).Trim() -ieq $extensionId })) {
-        throw 'VS Code: de PowerShell-extensie is na installatie niet teruggevonden.'
+        throw 'VS Code: the PowerShell extension was not found after installation.'
     }
-    Write-Host 'PowerShell-extensie voor VS Code is beschikbaar.'
+    Write-Host 'The VS Code PowerShell extension is available.'
 }
 
 function Test-JindaYodeckInstalled {
@@ -215,32 +215,32 @@ function Install-JindaYodeck {
 
     $ErrorActionPreference = 'Stop'
     Write-Host ''
-    if (-not $PSCmdlet.ShouldProcess('Yodeck Player', 'Downloaden bij Yodeck en installeren')) { return $false }
+    if (-not $PSCmdlet.ShouldProcess('Yodeck Player', 'Download from Yodeck and install')) { return $false }
     if (Test-JindaYodeckInstalled) {
-        Write-Host 'Yodeck Player is al aanwezig; overgeslagen.'
+        Write-Host 'Yodeck Player is already installed; skipped.'
         return $false
     }
     $folder = Join-Path $env:TEMP ('jinda-yodeck-' + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $folder
     $installer = Join-Path $folder 'yodeck-player.exe'
     try {
-        Write-Host 'Yodeck Player downloaden via de officiele Windows-download...'
+        Write-Host 'Downloading Yodeck Player using the official Windows download...'
         # Published on https://www.yodeck.com/docs/user-manual/setting-up-the-windows-player-with-the-yodeck-software/
         Invoke-WebRequest -UseBasicParsing -Uri 'https://yodeck.link/windowsv2' -OutFile $installer -ErrorAction Stop
         $signature = Get-AuthenticodeSignature -FilePath $installer
         if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
             $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)CN=Flipnode LLC(?:,|$)') {
-            throw 'Yodeck: de installer heeft geen geldige handtekening van Flipnode LLC; installatie gestopt.'
+            throw 'Yodeck: the installer has no valid signature from Flipnode LLC; installation stopped.'
         }
         # The official Electron installer is NSIS; /allusers selects machine installation.
         $process = Start-Process -FilePath $installer -ArgumentList @('/S', '/allusers') -WindowStyle Hidden -Wait -PassThru -ErrorAction Stop
         if ($process.ExitCode -notin @(0, 3010)) {
-            throw "Yodeck: installatie mislukt (exitcode $($process.ExitCode))."
+            throw "Yodeck: installation failed (exit code $($process.ExitCode))."
         }
         if (-not (Test-JindaYodeckInstalled)) {
-            throw 'Yodeck: de installer is klaar, maar de installatie is niet teruggevonden in Windows.'
+            throw 'Yodeck: the installer finished, but the installation was not found in Windows.'
         }
-        Write-Host 'Yodeck Player is geinstalleerd. Open de app om deze met de registratiecode aan je Yodeck-account te koppelen.'
+        Write-Host 'Yodeck Player is installed. Open the app and use its registration code to link it to your Yodeck account.'
         return ($process.ExitCode -eq 3010)
     }
     finally {
@@ -258,7 +258,7 @@ function Install-JindaSoftware {
     $PSNativeCommandUseErrorActionPreference = $false
     $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
     if (-not $winget) {
-        throw 'WinGet ontbreekt. Installeer of werk App Installer bij via de Microsoft Store en open PowerShell opnieuw.'
+        throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
     }
 
     # Scope is only forced when the manifest supports it; empty means installer default.
@@ -274,7 +274,7 @@ function Install-JindaSoftware {
         @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
         @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @() }
-        @{ Id = 'Git.Git'; Name = 'Git (inclusief Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
         @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
@@ -283,7 +283,7 @@ function Install-JindaSoftware {
     $restartNeeded = $false
     foreach ($package in $packages) {
         Write-Host ''
-        if (-not $PSCmdlet.ShouldProcess($package.Name, 'Installeren via WinGet')) {
+        if (-not $PSCmdlet.ShouldProcess($package.Name, 'Install using WinGet')) {
             continue
         }
         $wingetArguments = @(
@@ -292,17 +292,17 @@ function Install-JindaSoftware {
             '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
         ) + $package.Extra
         if ($package.Scope) { $wingetArguments += @('--scope', $package.Scope) }
-        Write-Host "$($package.Name) installeren of bijwerken via WinGet..."
+        Write-Host "$($package.Name) installing or updating using WinGet..."
         try {
             & $winget.Source @wingetArguments | Out-Host
             $wingetExitCode = $LASTEXITCODE
             $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
             switch ($exitCodeHex) {
-                '00000000' { Write-Host "$($package.Name) is beschikbaar." }
-                '8A15002B' { Write-Host "$($package.Name): geen nieuwere versie beschikbaar via WinGet." }
-                '8A150061' { Write-Host "$($package.Name) is al geinstalleerd; overgeslagen." }
+                '00000000' { Write-Host "$($package.Name) is available." }
+                '8A15002B' { Write-Host "$($package.Name): no newer version is available from WinGet." }
+                '8A150061' { Write-Host "$($package.Name) is already installed; skipped." }
                 '00000BC2' { $restartNeeded = $true }
-                default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
+                default { throw "$($package.Name): WinGet failed (exit code $wingetExitCode / 0x$exitCodeHex)." }
             }
             if ($package.Id -eq 'Microsoft.VisualStudioCode') {
                 Install-JindaVSCodePowerShellExtension
@@ -310,12 +310,12 @@ function Install-JindaSoftware {
         }
         catch {
             if ($package.Id -ne 'Google.Chrome') { throw }
-            Write-Warning "Google Chrome is niet succesvol afgerond: $($_.Exception.Message) De installatie gaat verder met de overige apps."
+            Write-Warning "Google Chrome did not complete successfully: $($_.Exception.Message) Installation will continue with the remaining apps."
         }
     }
     if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
     if ($restartNeeded) {
-        Write-Warning 'Software is geinstalleerd. Herstart Windows om de installatie af te ronden.'
+        Write-Warning 'Software is installed. Restart Windows to complete the installation.'
     }
     return $restartNeeded
 }
@@ -331,7 +331,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit $exitCode
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }

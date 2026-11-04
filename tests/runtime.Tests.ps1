@@ -43,7 +43,7 @@ Describe 'Administrator and runtime selection' {
 
     It 'does not repeatedly request UAC if relaunch failed to acquire rights' {
         Mock Test-JindaAdministrator { $false }
-        { Invoke-JindaManagedScript -ScriptPath 'C:\install.ps1' -RuntimeReady -Work { $script:workRan = $true; 0 } } | Should Throw 'vereiste beheerrechten'
+        { Invoke-JindaManagedScript -ScriptPath 'C:\install.ps1' -RuntimeReady -Work { $script:workRan = $true; 0 } } | Should Throw 'required administrator privileges'
         $script:workRan | Should Be $false
         Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
     }
@@ -144,7 +144,7 @@ Describe 'Starting an elevated child safely' {
 
     It 'reports rejected UAC and never starts a second process' {
         Mock Start-Process { throw 'The operation was canceled by the user' }
-        { Invoke-JindaChildProcess -Executable 'C:\pwsh.exe' -ScriptPath 'C:\config.ps1' -Elevate } | Should Throw 'Accepteer de Windows UAC-vraag'
+        { Invoke-JindaChildProcess -Executable 'C:\pwsh.exe' -ScriptPath 'C:\config.ps1' -Elevate } | Should Throw 'Accept the Windows UAC prompt'
         Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It
     }
 

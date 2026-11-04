@@ -1,23 +1,23 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Configureert Windows 11: Engels (VS), een US-toetsenbord en optionele LAN-toegang.
+Configure Windows 11: English (US), a US keyboard and optional remote access.
 .DESCRIPTION
-Installeert zo nodig het en-US-weergavetaalpakket en stelt de systeemtaal,
-het aanmeldscherm, systeemaccounts, nieuwe gebruikers en de uitvoerende gebruiker in.
-Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
-De Windows-configuratie draait intern in Windows PowerShell 5.1. Herstart daarna.
-RDP en WinRM worden alleen ingeschakeld als hun eigen switch is meegegeven.
-Bij gekozen remote-toegang zijn het LAN en WireGuard-client 10.6.0.3 toegestaan,
-ook voor IPv4-pings. De adresbegrenzing blijft behouden bij opnieuw uitvoeren.
+Installs the en-US display language pack when needed and configures the system,
+sign-in screen, system accounts, new users and the current user.
+Requests administrator privileges and selects the latest installed stable PowerShell 7+.
+Windows configuration runs internally in Windows PowerShell 5.1. Restart afterwards.
+RDP and WinRM are enabled only when their individual switches are specified.
+Selected remote access and IPv4 ping allow the LAN and WireGuard client 10.6.0.3.
+These address restrictions are retained when the script is run again.
 .PARAMETER Keyboard
-US (standaard) of USInternational. De regionale notatie blijft behouden.
+US (default) or USInternational. Regional date and number formats are preserved.
 .PARAMETER EnableRemoteDesktop
-Schakelt RDP met NLA in voor het gekozen LAN. Zonder switch blijft RDP ongewijzigd.
+Enables RDP with NLA. Without this switch, RDP settings are unchanged.
 .PARAMETER EnableWinRM
-Schakelt Windows PowerShell-remoting in voor het gekozen LAN. Zonder switch blijft WinRM ongewijzigd.
+Enables Windows PowerShell remoting. Without this switch, WinRM settings are unchanged.
 .PARAMETER LanIPAddress
-Actief IPv4-adres op deze pc; verplicht als een van de remote-opties is gekozen.
+Active IPv4 address on this PC; required when a remote access option is selected.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -78,7 +78,7 @@ function Get-JindaPowerShellCandidates {
             if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne $nativeMachine) { continue }
             [pscustomobject]@{ Path = $path; Version = $version }
         }
-        catch { Write-Verbose "PowerShell-kandidaat overgeslagen: $path ($($_.Exception.Message))" }
+        catch { Write-Verbose "Skipped PowerShell candidate: $path ($($_.Exception.Message))" }
         finally { if ($reader) { $reader.Dispose() } }
     }
 }
@@ -110,7 +110,7 @@ function Invoke-JindaChildProcess {
     if ($Elevate) {
         # Start-Process joins its arguments, so explicitly quote paths and values.
         if (@($arguments | Where-Object { $_ -match '["\r\n]' }).Count) {
-            throw 'Een scriptpad of argument bevat ongeldige tekens.'
+            throw 'A script path or argument contains invalid characters.'
         }
         $argumentLine = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
         try {
@@ -118,7 +118,7 @@ function Invoke-JindaChildProcess {
             return [int]$process.ExitCode
         }
         catch {
-            throw "Starten als administrator is niet gelukt. Accepteer de Windows UAC-vraag. $($_.Exception.Message)"
+            throw "Could not start as administrator. Accept the Windows UAC prompt. $($_.Exception.Message)"
         }
     }
     $PSNativeCommandUseErrorActionPreference = $false
@@ -137,12 +137,12 @@ function Invoke-JindaManagedScript {
     )
     $ErrorActionPreference = 'Stop'
     # WhatIf causes no elevation, download, log creation or settings changes.
-    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Uitvoeren: $(Split-Path -Leaf $ScriptPath) met beheerrechten")) { return 0 }
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Run $(Split-Path -Leaf $ScriptPath) as administrator")) { return 0 }
     $executable = Get-JindaPowerShell -WindowsPowerShell:$WindowsPowerShell
     $administrator = Test-JindaAdministrator
     if (-not $administrator -or (Get-JindaCurrentPowerShell) -ne $executable) {
-        if ($RuntimeReady) { throw 'De herstart heeft niet de vereiste beheerrechten of PowerShell-versie opgeleverd.' }
-        Write-Host "Starten met beheerrechten via $executable"
+        if ($RuntimeReady) { throw 'The relaunched process does not have the required administrator privileges or PowerShell version.' }
+        Write-Host "Starting with administrator privileges using $executable"
         return Invoke-JindaChildProcess -Executable $executable -ScriptPath $ScriptPath -ScriptArguments ($ScriptArguments + @('-RuntimeReady')) -Elevate:(-not $administrator)
     }
     $transcriptStarted = $false
@@ -154,12 +154,12 @@ function Invoke-JindaManagedScript {
         $logPath = Join-Path $logFolder $logName
         $null = Start-Transcript -LiteralPath $logPath -Force
         $transcriptStarted = $true
-        Write-Host "Logbestand: $logPath"
-        Write-Host "PowerShell $($PSVersionTable.PSVersion); administratorrechten actief."
+        Write-Host "Log file: $logPath"
+        Write-Host "PowerShell $($PSVersionTable.PSVersion); administrator privileges active."
         return (& $Work)
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host $_.ScriptStackTrace
         if ($logPath) { Write-Host "Details: $logPath" }
         return 1
@@ -177,7 +177,7 @@ function Get-LanIPv4Subnet {
         [Parameter(Mandatory)][ValidateRange(1, 30)][int]$PrefixLength
     )
     if ($Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) {
-        throw 'Dit script ondersteunt alleen een IPv4-LAN.'
+        throw 'This script supports IPv4 LANs only.'
     }
     $bytes = $Address.GetAddressBytes()
     for ($index = 0; $index -lt 4; $index++) {
@@ -192,7 +192,7 @@ function Assert-LanRemoteAccessAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-        throw 'Open Windows PowerShell als administrator en voer het script opnieuw uit.'
+        throw 'Open Windows PowerShell as administrator and run the script again.'
     }
 }
 
@@ -203,46 +203,46 @@ function Get-LanRemoteAccessPlan {
         [switch]$EnableWinRM
     )
 
-    if (-not $EnableRemoteDesktop -and -not $EnableWinRM) { throw 'Kies minstens een remote-onderdeel.' }
+    if (-not $EnableRemoteDesktop -and -not $EnableWinRM) { throw 'Select at least one remote access option.' }
 
     if ($PSVersionTable.PSEdition -ne 'Desktop') {
-        throw 'Gebruik Windows PowerShell 5.1 (powershell.exe), niet PowerShell 7 (pwsh.exe).'
+        throw 'Use Windows PowerShell 5.1 (powershell.exe), not PowerShell 7 (pwsh.exe).'
     }
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
     $edition = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
     if ($os.ProductType -ne 1 -or [int]$os.BuildNumber -lt 22000 -or
         $edition.EditionID -notmatch '^(Professional|Enterprise|Education|IoTEnterprise)') {
-        throw 'Dit script is bedoeld voor Windows 11 Pro/Enterprise/Education met RDP-hostondersteuning.'
+        throw 'This script requires Windows 11 Pro/Enterprise/Education with RDP host support.'
     }
 
     $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -IPAddress $Address.IPAddressToString -ErrorAction SilentlyContinue |
         Where-Object { $_.AddressState -eq 'Preferred' })
     if ($addresses.Count -ne 1) {
-        throw "Doeladres $Address is niet eenduidig actief op deze pc. Er wordt niets aangepast."
+        throw "Target address $Address must match exactly one active interface on this PC. Nothing will be changed."
     }
     $lan = $addresses[0]
     $subnet = Get-LanIPv4Subnet -Address $Address -PrefixLength $lan.PrefixLength
     $profiles = @(Get-NetConnectionProfile -InterfaceIndex $lan.InterfaceIndex -ErrorAction Stop)
-    if ($profiles.Count -ne 1) { throw 'Kan het netwerkprofiel van de LAN-interface niet eenduidig bepalen.' }
+    if ($profiles.Count -ne 1) { throw 'Cannot identify a unique network profile for the LAN interface.' }
     $category = [string]$profiles[0].NetworkCategory
     $firewallProfileName = if ($category -eq 'DomainAuthenticated') { 'Domain' } else { $category }
     $firewallProfile = Get-NetFirewallProfile -PolicyStore ActiveStore -Name $firewallProfileName -ErrorAction Stop
     if ([string]$firewallProfile.Enabled -ne 'True') {
-        throw "Windows Firewall staat uit voor $firewallProfileName. LAN-begrenzing kan zo niet worden toegepast."
+        throw "Windows Firewall is disabled for $firewallProfileName. LAN access restrictions cannot be applied."
     }
     if ([string]$firewallProfile.AllowLocalFirewallRules -eq 'False') {
-        throw 'Beleid staat lokale firewallregels niet toe. Pas het centrale beleid aan; dit script overschrijft het niet.'
+        throw 'Policy does not allow local firewall rules. Update the central policy; this script will not override it.'
     }
 
     $port = $null
     if ($EnableRemoteDesktop) {
         $policy = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -ErrorAction SilentlyContinue
         if ($null -ne $policy -and $policy.PSObject.Properties['fDenyTSConnections'] -and $policy.fDenyTSConnections -eq 1) {
-            throw 'RDP wordt geblokkeerd door beleid. Er wordt niets aangepast.'
+            throw 'RDP is blocked by policy. Nothing will be changed.'
         }
         $rdp = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -ErrorAction Stop
         $port = [int]$rdp.PortNumber
-        if ($port -lt 1 -or $port -gt 65535 -or $port -eq 5985) { throw 'Het bestaande RDP-poortnummer is ongeldig of conflicteert met WinRM.' }
+        if ($port -lt 1 -or $port -gt 65535 -or $port -eq 5985) { throw 'The existing RDP port is invalid or conflicts with WinRM.' }
     }
 
     # Internal rule names are independent of the Windows display language.
@@ -253,17 +253,17 @@ function Get-LanRemoteAccessPlan {
         Where-Object { $_.Direction -eq 'Inbound' })
     if ($EnableRemoteDesktop) {
         foreach ($required in @('RemoteDesktop-UserMode-In-TCP', 'RemoteDesktop-UserMode-In-UDP')) {
-            if ($required -notin $rules.Name) { throw "Windows-standaardregel ontbreekt: $required. Er wordt niets aangepast." }
+            if ($required -notin $rules.Name) { throw "A required Windows default rule is missing: $required. Nothing will be changed." }
         }
     }
     if ($EnableWinRM -and @($rules | Where-Object { $_.Name -like 'WINRM-HTTP-In-TCP*' }).Count -eq 0) {
-        throw 'Windows-standaardregels voor WinRM ontbreken. Er wordt niets aangepast.'
+        throw 'Windows default rules for WinRM are missing. Nothing will be changed.'
     }
     $managed = @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $rules.Name -ErrorAction Stop)
     $pingRuleName = 'Jinda-LAN-WireGuard-ICMPv4-In'
     $managed += @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $pingRuleName -ErrorAction SilentlyContinue)
     if (@($managed | Where-Object { $_.PolicyStoreSourceType -eq 'GroupPolicy' }).Count) {
-        throw 'Een van de benodigde firewallregels wordt centraal beheerd. Er wordt niets aangepast.'
+        throw 'One of the required firewall rules is centrally managed. Nothing will be changed.'
     }
 
     [pscustomobject]@{
@@ -323,7 +323,7 @@ function Invoke-LanRemoteAccessSetup {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory)]$Plan)
     $ErrorActionPreference = 'Stop'
-    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Gekozen remote-toegang en IPv4-ping toestaan voor dit LAN en WireGuard 10.6.0.3')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Enable selected remote access and IPv4 ping for this LAN and WireGuard 10.6.0.3')) { return }
     Assert-LanRemoteAccessAdministrator
     # Scope the rules before enabling, and again afterwards because Microsoft's
     # remoting setup may update standard firewall rules itself.
@@ -372,9 +372,9 @@ function Invoke-LanRemoteAccessSetup {
     Get-NetTCPConnection -State Listen -ErrorAction Stop |
         Where-Object { $_.LocalPort -in $ports } |
         Select-Object LocalAddress, LocalPort, State
-    Write-Host 'Instellingen toegepast. Test de bereikbaarheid en aanmelding nog vanaf de andere pc.'
-    Write-Host ("Toegestane bronadressen voor gekozen remote-toegang en IPv4-pings: {0}." -f ($Plan.RemoteAddresses -join ', '))
-    Write-Host 'WinRM-clientauthenticatie (eventueel TrustedHosts/HTTPS) wordt niet door dit script ingesteld.'
+    Write-Host 'Settings applied. Test connectivity and sign-in from the other PC.'
+    Write-Host ("Allowed source addresses for selected remote access and IPv4 pings: {0}." -f ($Plan.RemoteAddresses -join ', '))
+    Write-Host 'This script does not configure WinRM client authentication (such as TrustedHosts/HTTPS).'
 }
 # END LAN remote access.
 
@@ -400,15 +400,15 @@ function Set-JindaWindowsEnglish {
     $ErrorActionPreference = 'Stop'
 
     if ($PSVersionTable.PSEdition -ne 'Desktop' -or -not [Environment]::Is64BitProcess) {
-        throw 'De interne taalconfiguratie vereist 64-bits Windows PowerShell 5.1.'
+        throw 'The internal language configuration requires 64-bit Windows PowerShell 5.1.'
     }
 
     $windows = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
     if ($windows.InstallationType -ne 'Client' -or [int]$windows.CurrentBuildNumber -lt 22000) {
-        throw 'Dit script vereist Windows 11.'
+        throw 'This script requires Windows 11.'
     }
     if ($windows.EditionID -match 'SingleLanguage|CountrySpecific') {
-        throw 'Deze Windows-editie ondersteunt het wisselen van weergavetaal niet. Gebruik bijvoorbeeld Windows 11 Pro.'
+        throw 'This Windows edition does not support changing the display language. Use an edition such as Windows 11 Pro.'
     }
 
     Import-Module International -ErrorAction Stop
@@ -425,28 +425,28 @@ function Set-JindaWindowsEnglish {
     }
 
     $inputTip = if ($Keyboard -eq 'USInternational') { '0409:00020409' } else { '0409:00000409' }
-    Write-Host "Windows-weergavetaal: en-US; toetsenbord: $Keyboard ($inputTip)."
-    Write-Host "Regionale datum- en getalnotatie behouden: $((Get-Culture).Name)."
-    Write-Host 'Bereik: systeemstandaard, aanmeldscherm, systeemaccounts, nieuwe gebruikers en uitvoerend account.'
-    Write-Host 'Andere bestaande gebruikers behouden hun persoonlijke taalinstellingen.'
+    Write-Host "Windows display language: en-US; keyboard: $Keyboard ($inputTip)."
+    Write-Host "Preserving regional date and number formats: $((Get-Culture).Name)."
+    Write-Host 'Scope: system default, sign-in screen, system accounts, new users and the current account.'
+    Write-Host 'Other existing users keep their personal language settings.'
 
     # Alle instellingen en downloads staan achter deze ene WhatIf-controle.
-    if (-not $PSCmdlet.ShouldProcess('Windows 11', 'Engels (VS) en het gekozen toetsenbord als standaard instellen')) {
+    if (-not $PSCmdlet.ShouldProcess('Windows 11', 'Set English (US) and the selected keyboard as defaults')) {
         return
     }
     if (-not (Test-JindaAdministrator)) {
-        throw 'Open Windows PowerShell met Als administrator uitvoeren en start het script opnieuw.'
+        throw 'Open Windows PowerShell using Run as administrator and start the script again.'
     }
     if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
-        throw 'Start dit script onder een aangemeld gebruikersaccount met beheerrechten, niet als SYSTEM.'
+        throw 'Run this script from a signed-in user account with administrator privileges, not as SYSTEM.'
     }
 
     if (-not (Test-JindaEnglishLanguagePack)) {
-        Write-Host 'Het en-US-weergavetaalpakket downloaden en installeren. Dit kan enkele minuten duren...'
+        Write-Host 'Downloading and installing the en-US display language pack. This may take several minutes...'
         # Geen CopyToSettings: dat zou ook de regionale notatie veranderen.
         $null = Install-Language -Language 'en-US' -ExcludeFeatures -ErrorAction Stop
         if (-not (Test-JindaEnglishLanguagePack)) {
-            throw 'Het en-US-weergavetaalpakket is nog niet beschikbaar. Herstart Windows en voer het script opnieuw uit.'
+            throw 'The en-US display language pack is not available yet. Restart Windows and run the script again.'
         }
     }
 
@@ -461,7 +461,7 @@ function Set-JindaWindowsEnglish {
     }
 
     # Voorkom dat de Engelse UI ook datum- en getalnotatie omzet naar Amerikaans.
-    Write-Host 'Windows-taal en toetsenbord instellen en kopieren naar systeemaccounts en nieuwe gebruikers...'
+    Write-Host 'Setting the Windows language and keyboard, then copying settings to system accounts and new users...'
     Set-WinCultureFromLanguageListOptOut -OptOut $true
     Set-SystemPreferredUILanguage -Language 'en-US'
     Set-WinSystemLocale -SystemLocale 'en-US'
@@ -471,11 +471,11 @@ function Set-JindaWindowsEnglish {
     Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
 
     if ([string](Get-SystemPreferredUILanguage) -ne 'en-US') {
-        throw 'De systeemvoorkeur is na het instellen niet en-US. Controleer of organisatiebeleid de instelling blokkeert.'
+        throw 'The system language preference is not en-US after configuration. Check whether organization policy blocks the setting.'
     }
-    Write-Host 'Engels (VS) is als systeemstandaard ingesteld. Herstart Windows om alle wijzigingen toe te passen.'
-    Write-Host 'Land/regio en tijdzone zijn niet aangepast. Voor nieuwe accounts wordt de regio van het uitvoerende account gekopieerd.'
-    Write-Host 'Voor andere bestaande accounts moet de persoonlijke weergavetaal zo nodig afzonderlijk worden ingesteld.'
+    Write-Host 'English (US) is set as the system default. Restart Windows to apply all changes.'
+    Write-Host 'Country/region and time zone are unchanged. New accounts inherit the region of the current account.'
+    Write-Host 'For other existing accounts, set the personal display language separately if needed.'
 }
 
 
@@ -488,7 +488,7 @@ function Invoke-JindaConfiguration {
     if ($PSVersionTable.PSEdition -ne 'Desktop') {
         # Keep live WinUserLanguage objects in one native Windows PowerShell process.
         # This worker inherits administrator rights and is part of this same file.
-        Write-Host 'Windows-configuratie uitvoeren in Windows PowerShell 5.1 (compatibiliteit).'
+        Write-Host 'Running Windows configuration in Windows PowerShell 5.1 (compatibility).'
         $workerArguments = @('-Keyboard', $Keyboard, '-WindowsLanguageWorker', '-RuntimeReady')
         if ($EnableRemoteDesktop) { $workerArguments += '-EnableRemoteDesktop' }
         if ($EnableWinRM) { $workerArguments += '-EnableWinRM' }
@@ -497,13 +497,13 @@ function Invoke-JindaConfiguration {
     }
     $remotePlan = $null
     if ($EnableRemoteDesktop -or $EnableWinRM) {
-        if (-not $LanIPAddress) { throw 'LanIPAddress is verplicht voor remote-toegang. Start via init.ps1 om het LAN te kiezen.' }
+        if (-not $LanIPAddress) { throw 'LanIPAddress is required for remote access. Start with init.ps1 to select the LAN.' }
         $remotePlan = Get-LanRemoteAccessPlan -Address $LanIPAddress -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM
     }
     Set-JindaWindowsEnglish -Keyboard $Keyboard
     if ($remotePlan) {
         Write-Host ''
-        Write-Host 'Gekozen LAN-toegang configureren...'
+        Write-Host 'Configuring the selected LAN access options...'
         $remotePlan | Select-Object Address, RemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
         Invoke-LanRemoteAccessSetup -Plan $remotePlan | Out-Host
     }
@@ -524,7 +524,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit $exitCode
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }

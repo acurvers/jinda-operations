@@ -28,13 +28,17 @@ voor de afsluitende accolade; standaard kiest init US-International.
 
 Na de eventuele UAC-vraag stelt init alle vragen voordat apps worden gedownload of Windows wordt aangepast:
 
+De eigen vragen, statusmeldingen, waarschuwingen en foutmeldingen van de drie scripts
+zijn in het Engels. Uitvoer van Windows, WinGet en andere externe programma's volgt
+hun eigen taalinstelling.
+
 **Keuzes bij de start**
 
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
-| Apps downloaden en installeren? | Ja | Geen apps downloaden/installeren en geen WinGet-herstel |
-| Remote Desktop (RDP) inschakelen op het LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
-| PowerShell-remoting (WinRM) inschakelen op het LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
+| Download and install apps? | Ja | Geen apps downloaden/installeren en geen WinGet-herstel |
+| Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
+| Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 
 Bij een remote-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.

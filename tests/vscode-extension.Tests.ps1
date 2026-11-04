@@ -36,7 +36,7 @@ Describe 'Finding VS Code after installation' {
     }
 
     It 'fails clearly if no VS Code CLI is available' {
-        { Get-JindaVSCodeCliPath } | Should Throw 'code.cmd is na installatie niet gevonden'
+        { Get-JindaVSCodeCliPath } | Should Throw 'code.cmd was not found after installation'
     }
 }
 
@@ -58,18 +58,18 @@ Describe 'Installing the Microsoft PowerShell extension' {
 
     It 'stops when installation fails even if an older extension was present' {
         $script:codeInstallExit = 1
-        { Install-JindaVSCodePowerShellExtension } | Should Throw 'installeren is mislukt (exitcode 1)'
+        { Install-JindaVSCodePowerShellExtension } | Should Throw 'installation failed (exit code 1)'
         $script:codeCalls.Count | Should Be 1
     }
 
     It 'rejects a failed verification command' {
         $script:codeListExit = 2
-        { Install-JindaVSCodePowerShellExtension } | Should Throw 'extensies controleren is mislukt (exitcode 2)'
+        { Install-JindaVSCodePowerShellExtension } | Should Throw 'extension verification failed (exit code 2)'
     }
 
     It 'rejects success without the requested extension in the installed list' {
         $script:codeExtensions = @('another.publisher')
-        { Install-JindaVSCodePowerShellExtension } | Should Throw 'niet teruggevonden'
+        { Install-JindaVSCodePowerShellExtension } | Should Throw 'was not found'
     }
 
     It 'does not locate or execute VS Code during WhatIf' {

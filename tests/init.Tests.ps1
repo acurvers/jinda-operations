@@ -75,13 +75,13 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'does not start configuration after an installation failure' {
         $script:initExitCodes = @(1, 0)
-        { Invoke-JindaInitialization } | Should Throw 'Software-installatie mislukt'
+        { Invoke-JindaInitialization } | Should Throw 'Software installation failed'
         $script:initLaunches.Count | Should Be 1
     }
 
     It 'reports configuration failure instead of reporting success' {
         $script:initExitCodes = @(0, 1)
-        { Invoke-JindaInitialization } | Should Throw 'Windows-configuratie mislukt'
+        { Invoke-JindaInitialization } | Should Throw 'Windows configuration failed'
     }
 
     It 'never installs when the configuration script is missing from the package' {
@@ -90,7 +90,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
             $script:initEvents.Add("validate:$LiteralPath")
             $true
         }
-        { Invoke-JindaInitialization } | Should Throw 'Scriptpakket onvolledig'
+        { Invoke-JindaInitialization } | Should Throw 'Incomplete script package'
         $script:initLaunches.Count | Should Be 0
     }
 

@@ -89,13 +89,13 @@ Describe 'Windows English system defaults' {
     It 'stops if installation returns without a usable display pack' {
         $script:packInstalled = $false
         Mock Install-Language {}
-        { Set-JindaWindowsEnglish } | Should Throw 'weergavetaalpakket is nog niet beschikbaar'
+        { Set-JindaWindowsEnglish } | Should Throw 'display language pack is not available yet'
         $script:mutationOrder.Count | Should Be 0
     }
 
     It 'requires administrator privileges before installing or changing settings' {
         Mock Test-JindaAdministrator { $false }
-        { Set-JindaWindowsEnglish } | Should Throw 'Als administrator uitvoeren'
+        { Set-JindaWindowsEnglish } | Should Throw 'Run as administrator'
         $script:mutationOrder.Count | Should Be 0
         Assert-MockCalled Install-Language -Times 0 -Exactly -Scope It
     }
@@ -104,7 +104,7 @@ Describe 'Windows English system defaults' {
         Mock Get-ItemProperty {
             [pscustomobject]@{ InstallationType = 'Client'; CurrentBuildNumber = '19045'; EditionID = 'Professional' }
         }
-        { Set-JindaWindowsEnglish } | Should Throw 'vereist Windows 11'
+        { Set-JindaWindowsEnglish } | Should Throw 'requires Windows 11'
         $script:mutationOrder.Count | Should Be 0
     }
 
@@ -112,12 +112,12 @@ Describe 'Windows English system defaults' {
         Mock Get-ItemProperty {
             [pscustomobject]@{ InstallationType = 'Client'; CurrentBuildNumber = '26100'; EditionID = 'CoreSingleLanguage' }
         }
-        { Set-JindaWindowsEnglish } | Should Throw 'weergavetaal niet'
+        { Set-JindaWindowsEnglish } | Should Throw 'does not support changing the display language'
         $script:mutationOrder.Count | Should Be 0
     }
 
     It 'reports a system-language verification failure' {
         Mock Get-SystemPreferredUILanguage { 'nl-NL' }
-        { Set-JindaWindowsEnglish } | Should Throw 'systeemvoorkeur is na het instellen niet en-US'
+        { Set-JindaWindowsEnglish } | Should Throw 'system language preference is not en-US after configuration'
     }
 }

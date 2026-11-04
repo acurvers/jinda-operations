@@ -45,7 +45,7 @@ Describe 'Official Yodeck installer' {
 
     It 'refuses unsigned or invalid installers' {
         Mock Get-AuthenticodeSignature { [pscustomobject]@{ Status = 'NotSigned'; SignerCertificate = $null } }
-        { Install-JindaYodeck } | Should Throw 'geen geldige handtekening'
+        { Install-JindaYodeck } | Should Throw 'no valid signature'
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
     }
 
@@ -53,18 +53,18 @@ Describe 'Official Yodeck installer' {
         Mock Get-AuthenticodeSignature {
             [pscustomobject]@{ Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Subject = 'CN=Another Publisher, O=Another Publisher' } }
         }
-        { Install-JindaYodeck } | Should Throw 'geen geldige handtekening'
+        { Install-JindaYodeck } | Should Throw 'no valid signature'
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
     }
 
     It 'reports a failed installer exit code' {
         Mock Start-Process { [pscustomobject]@{ ExitCode = 1 } }
-        { Install-JindaYodeck } | Should Throw 'installatie mislukt (exitcode 1)'
+        { Install-JindaYodeck } | Should Throw 'installation failed (exit code 1)'
     }
 
     It 'does not report success if the installer leaves no registered application' {
         Mock Start-Process { [pscustomobject]@{ ExitCode = 0 } }
-        { Install-JindaYodeck } | Should Throw 'niet teruggevonden'
+        { Install-JindaYodeck } | Should Throw 'was not found'
     }
 
     It 'propagates a restart requirement' {

@@ -1,24 +1,24 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Start de Jinda-inrichting: keuzes vooraf, optioneel software, daarna Windows-configuratie.
+Start Jinda setup: choose options first, optionally install software, then configure Windows.
 .DESCRIPTION
-Vraagt zo nodig eenmaal administratorrechten en verzamelt alle keuzes vooraf.
-Gebruikt de twee vaste scripts uit hetzelfde GitHub-ZIP-pakket en kiest opnieuw
-PowerShell na de optionele software-installatie.
+Requests administrator privileges when needed and collects all choices up front.
+Uses the two scripts from the same GitHub ZIP package and selects PowerShell again
+after the optional software installation.
 .PARAMETER Keyboard
-USInternational (standaard) of US.
+USInternational (default) or US.
 .PARAMETER RepairWinGet
-Herstelt WinGet met Microsoft.WinGet.Client en controleert de winget-bron
-voordat de software-installatie begint. Alleen actief als deze switch is opgegeven.
+Repairs WinGet using Microsoft.WinGet.Client and checks its source before installing
+software. Only runs when this switch is specified and app installation is enabled.
 .PARAMETER InstallApps
-Ask (standaard), Yes of No. Vraagt aan het begin of apps moeten worden geinstalleerd.
+Ask (default), Yes or No. Asks at startup whether to download and install apps.
 .PARAMETER RemoteDesktop
-Ask (standaard), Yes of No. Remote Desktop inschakelen voor het gekozen LAN.
+Ask (default), Yes or No. Enables Remote Desktop for the selected LAN and WireGuard client.
 .PARAMETER PowerShellRemoting
-Ask (standaard), Yes of No. Windows PowerShell-remoting (WinRM) inschakelen op het LAN.
+Ask (default), Yes or No. Enables Windows PowerShell remoting (WinRM).
 .PARAMETER LanIPAddress
-Optioneel actief IPv4-adres van de doel-pc. Zonder dit adres wordt het LAN aan het begin gekozen.
+Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -80,7 +80,7 @@ function Get-JindaPowerShellCandidates {
             if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne $nativeMachine) { continue }
             [pscustomobject]@{ Path = $path; Version = $version }
         }
-        catch { Write-Verbose "PowerShell-kandidaat overgeslagen: $path ($($_.Exception.Message))" }
+        catch { Write-Verbose "Skipped PowerShell candidate: $path ($($_.Exception.Message))" }
         finally { if ($reader) { $reader.Dispose() } }
     }
 }
@@ -112,7 +112,7 @@ function Invoke-JindaChildProcess {
     if ($Elevate) {
         # Start-Process joins its arguments, so explicitly quote paths and values.
         if (@($arguments | Where-Object { $_ -match '["\r\n]' }).Count) {
-            throw 'Een scriptpad of argument bevat ongeldige tekens.'
+            throw 'A script path or argument contains invalid characters.'
         }
         $argumentLine = ($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
         try {
@@ -120,7 +120,7 @@ function Invoke-JindaChildProcess {
             return [int]$process.ExitCode
         }
         catch {
-            throw "Starten als administrator is niet gelukt. Accepteer de Windows UAC-vraag. $($_.Exception.Message)"
+            throw "Could not start as administrator. Accept the Windows UAC prompt. $($_.Exception.Message)"
         }
     }
     $PSNativeCommandUseErrorActionPreference = $false
@@ -139,12 +139,12 @@ function Invoke-JindaManagedScript {
     )
     $ErrorActionPreference = 'Stop'
     # WhatIf causes no elevation, download, log creation or settings changes.
-    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Uitvoeren: $(Split-Path -Leaf $ScriptPath) met beheerrechten")) { return 0 }
+    if (-not $PSCmdlet.ShouldProcess($env:COMPUTERNAME, "Run $(Split-Path -Leaf $ScriptPath) as administrator")) { return 0 }
     $executable = Get-JindaPowerShell -WindowsPowerShell:$WindowsPowerShell
     $administrator = Test-JindaAdministrator
     if (-not $administrator -or (Get-JindaCurrentPowerShell) -ne $executable) {
-        if ($RuntimeReady) { throw 'De herstart heeft niet de vereiste beheerrechten of PowerShell-versie opgeleverd.' }
-        Write-Host "Starten met beheerrechten via $executable"
+        if ($RuntimeReady) { throw 'The relaunched process does not have the required administrator privileges or PowerShell version.' }
+        Write-Host "Starting with administrator privileges using $executable"
         return Invoke-JindaChildProcess -Executable $executable -ScriptPath $ScriptPath -ScriptArguments ($ScriptArguments + @('-RuntimeReady')) -Elevate:(-not $administrator)
     }
     $transcriptStarted = $false
@@ -156,12 +156,12 @@ function Invoke-JindaManagedScript {
         $logPath = Join-Path $logFolder $logName
         $null = Start-Transcript -LiteralPath $logPath -Force
         $transcriptStarted = $true
-        Write-Host "Logbestand: $logPath"
-        Write-Host "PowerShell $($PSVersionTable.PSVersion); administratorrechten actief."
+        Write-Host "Log file: $logPath"
+        Write-Host "PowerShell $($PSVersionTable.PSVersion); administrator privileges active."
         return (& $Work)
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         Write-Host $_.ScriptStackTrace
         if ($logPath) { Write-Host "Details: $logPath" }
         return 1
@@ -177,9 +177,9 @@ function Repair-JindaWinGet {
     param()
 
     $ErrorActionPreference = 'Stop'
-    if (-not $PSCmdlet.ShouldProcess('Deze pc', 'WinGet herstellen en bijwerken naar de nieuwste stabiele versie')) { return }
+    if (-not $PSCmdlet.ShouldProcess('This PC', 'Repair WinGet and update it to the latest stable version')) { return }
 
-    Write-Host 'WinGet herstellen met de officiele Microsoft-module...'
+    Write-Host 'Repairing WinGet using the official Microsoft module...'
     # Windows PowerShell 5.1 may still need the NuGet provider to use PSGallery.
     if ($PSVersionTable.PSEdition -eq 'Desktop') {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -194,15 +194,15 @@ function Repair-JindaWinGet {
     Repair-WinGetPackageManager -Force -Latest -Verbose -ErrorAction Stop | Out-Host
 
     # Probe a required app: Chrome installation errors are allowed to continue.
-    Write-Host 'WinGet-bron controleren met TeamViewer...'
+    Write-Host 'Checking the WinGet source using TeamViewer...'
     $winget = (Get-Command winget.exe -CommandType Application -ErrorAction Stop).Source
     $PSNativeCommandUseErrorActionPreference = $false
     & $winget show --id TeamViewer.TeamViewer --exact --source winget --accept-source-agreements --disable-interactivity | Out-Host
     $sourceCode = $LASTEXITCODE
     if ($sourceCode -ne 0) {
-        throw "WinGet-bron blijft onbruikbaar na herstel (exitcode $sourceCode). Installatie en configuratie zijn niet gestart."
+        throw "The WinGet source is still unavailable after repair (exit code $sourceCode). Installation and configuration have not started."
     }
-    Write-Host 'WinGet-herstel en broncontrole geslaagd.'
+    Write-Host 'WinGet repair and source check completed successfully.'
 }
 
 function Read-JindaYesNo {
@@ -218,7 +218,7 @@ function Read-JindaYesNo {
         if ($answer -eq '') { return $Default }
         if ($answer -in @('y', 'yes', 'j', 'ja')) { return $true }
         if ($answer -in @('n', 'no', 'nee')) { return $false }
-        Write-Host 'Antwoord met y of n.'
+        Write-Host 'Please enter y or n.'
     }
 }
 
@@ -231,28 +231,28 @@ function Select-JindaLanAddress {
         } | Sort-Object InterfaceIndex, IPAddress)
     if ($Address) {
         $parsed = [Net.IPAddress]::Parse($Address)
-        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'Kies een IPv4-LAN-adres.' }
+        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'Please select an IPv4 LAN address.' }
         $selected = @($candidates | Where-Object IPAddress -eq $parsed.IPAddressToString)
-        if ($selected.Count -ne 1) { throw "LAN-adres $Address is niet eenduidig actief op deze pc." }
+        if ($selected.Count -ne 1) { throw "LAN address $Address must match exactly one active interface on this PC." }
     }
-    elseif ($candidates.Count -eq 0) { throw 'Geen actief IPv4-LAN gevonden. Er wordt nog niets geinstalleerd of ingesteld.' }
+    elseif ($candidates.Count -eq 0) { throw 'No active IPv4 LAN found. Nothing has been installed or configured.' }
     elseif ($candidates.Count -eq 1) { $selected = @($candidates[0]) }
     else {
-        Write-Host 'Kies het LAN waarop Remote Desktop/WinRM bereikbaar mag zijn:'
+        Write-Host 'Select the LAN where Remote Desktop/WinRM should be accessible:'
         for ($i = 0; $i -lt $candidates.Count; $i++) {
             Write-Host ('{0}: {1} - {2}/{3}' -f ($i + 1), $candidates[$i].InterfaceAlias, $candidates[$i].IPAddress, $candidates[$i].PrefixLength)
         }
         while ($true) {
             $number = 0
-            $answer = Read-Host 'LAN-nummer'
+            $answer = Read-Host 'LAN number'
             if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $candidates.Count) {
                 $selected = @($candidates[$number - 1])
                 break
             }
-            Write-Host 'Kies een nummer uit de lijst.'
+            Write-Host 'Please select a number from the list.'
         }
     }
-    Write-Host ('LAN voor toegang op afstand: {0} - {1}/{2}.' -f $selected[0].InterfaceAlias, $selected[0].IPAddress, $selected[0].PrefixLength)
+    Write-Host ('LAN for remote access: {0} - {1}/{2}.' -f $selected[0].InterfaceAlias, $selected[0].IPAddress, $selected[0].PrefixLength)
     return [string]$selected[0].IPAddress
 }
 
@@ -261,10 +261,10 @@ function Get-JindaSetupOptions {
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
         [string]$PowerShellRemoting = 'Ask', [string]$LanIPAddress
     )
-    Write-Host 'Kies nu de onderdelen. Daarna loopt de inrichting zonder verdere vragen door.'
-    $apps = Read-JindaYesNo -Prompt 'Apps downloaden en installeren?' -Choice $InstallApps -Default $true
-    $rdp = Read-JindaYesNo -Prompt 'Remote Desktop (RDP) inschakelen op het LAN?' -Choice $RemoteDesktop
-    $winrm = Read-JindaYesNo -Prompt 'PowerShell-remoting (WinRM) inschakelen op het LAN?' -Choice $PowerShellRemoting
+    Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
+    $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
+    $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN?' -Choice $RemoteDesktop
+    $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN?' -Choice $PowerShellRemoting
     $address = ''
     if ($rdp -or $winrm) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; LanIPAddress = $address }
@@ -283,7 +283,7 @@ function Invoke-JindaInitialization {
     )
 
     $ErrorActionPreference = 'Stop'
-    if (-not $PSCmdlet.ShouldProcess('Deze pc', 'Jinda-software installeren en Windows configureren')) { return 0 }
+    if (-not $PSCmdlet.ShouldProcess('This PC', 'Install Jinda software and configure Windows')) { return 0 }
 
     # The start command downloads one complete source archive. Children never prompt.
     $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
@@ -294,30 +294,30 @@ function Invoke-JindaInitialization {
     if ($options.InstallApps) { $requiredScripts = @($install, $config) }
     foreach ($path in $requiredScripts) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Scriptpakket onvolledig: $path ontbreekt. Gebruik de nieuwe startopdracht uit de GitHub README."
+            throw "Incomplete script package: $path is missing. Use the new startup command from the GitHub README."
         }
     }
-    Write-Host "Scripts gebruiken uit GitHub-pakket: $folder"
+    Write-Host "Using scripts from GitHub package: $folder"
 
     $installCode = 0
     if ($options.InstallApps) {
         if ($RepairWinGet) { Repair-JindaWinGet }
-        Write-Host 'Stap 1/2: software installeren.'
+        Write-Host 'Step 1/2: installing software.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -NonInteractive
-        if ($installCode -notin @(0, 3010)) { throw "Software-installatie mislukt (exitcode $installCode). Configuratie is niet gestart." }
+        if ($installCode -notin @(0, 3010)) { throw "Software installation failed (exit code $installCode). Configuration has not started." }
     }
-    else { Write-Host 'Software-installatie en eventueel WinGet-herstel overgeslagen volgens je keuze.' }
+    else { Write-Host 'Software installation and any WinGet repair have been skipped as requested.' }
 
     # PowerShell may have just been installed or upgraded; select it again.
-    Write-Host 'Stap 2/2: Windows configureren.'
+    Write-Host 'Step 2/2: configuring Windows.'
     $configArguments = @('-Keyboard', $Keyboard)
     if ($options.RemoteDesktop) { $configArguments += '-EnableRemoteDesktop' }
     if ($options.PowerShellRemoting) { $configArguments += '-EnableWinRM' }
     if ($options.LanIPAddress) { $configArguments += @('-LanIPAddress', $options.LanIPAddress) }
     $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
-    if ($configCode -ne 0) { throw "Windows-configuratie mislukt (exitcode $configCode)." }
+    if ($configCode -ne 0) { throw "Windows configuration failed (exit code $configCode)." }
 
-    Write-Host 'Jinda-inrichting voltooid. Herstart Windows om de wijzigingen toe te passen.'
+    Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'
     return $installCode
 }
 
@@ -333,7 +333,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit $exitCode
     }
     catch {
-        Write-Host "FOUT: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         exit 1
     }
 }
