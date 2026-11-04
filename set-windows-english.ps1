@@ -8,6 +8,8 @@ het aanmeldscherm, systeemaccounts, nieuwe gebruikers en de uitvoerende gebruike
 Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
 De Windows-configuratie draait intern in Windows PowerShell 5.1. Herstart daarna.
 RDP en WinRM worden alleen ingeschakeld als hun eigen switch is meegegeven.
+Bij gekozen remote-toegang zijn het LAN en WireGuard-client 10.6.0.3 toegestaan,
+ook voor IPv4-pings. De adresbegrenzing blijft behouden bij opnieuw uitvoeren.
 .PARAMETER Keyboard
 US (standaard) of USInternational. De regionale notatie blijft behouden.
 .PARAMETER EnableRemoteDesktop
@@ -258,6 +260,8 @@ function Get-LanRemoteAccessPlan {
         throw 'Windows-standaardregels voor WinRM ontbreken. Er wordt niets aangepast.'
     }
     $managed = @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $rules.Name -ErrorAction Stop)
+    $pingRuleName = 'Jinda-LAN-WireGuard-ICMPv4-In'
+    $managed += @(Get-NetFirewallRule -PolicyStore ActiveStore -Name $pingRuleName -ErrorAction SilentlyContinue)
     if (@($managed | Where-Object { $_.PolicyStoreSourceType -eq 'GroupPolicy' }).Count) {
         throw 'Een van de benodigde firewallregels wordt centraal beheerd. Er wordt niets aangepast.'
     }
@@ -267,6 +271,8 @@ function Get-LanRemoteAccessPlan {
         Address = $Address.IPAddressToString
         InterfaceAlias = [string]$lan.InterfaceAlias
         Subnet = $subnet
+        RemoteAddresses = @($subnet, '10.6.0.3')
+        PingRuleName = $pingRuleName
         NetworkProfile = $category
         WinRMPort = 5985
         RDPPort = $port
@@ -284,8 +290,32 @@ function Set-LanRemoteAccessRuleScope {
         # Preserve enabled/disabled state here. Only the three required rule types
         # are enabled below; compatibility, HTTPS and shadowing rules stay as found.
         Set-NetFirewallRule -PolicyStore PersistentStore -Name $rule.Name -Profile Any `
-            -LocalAddress $Plan.Address -RemoteAddress $Plan.Subnet `
+            -LocalAddress $Plan.Address -RemoteAddress $Plan.RemoteAddresses `
             -InterfaceAlias $interfacePattern -EdgeTraversalPolicy Block -ErrorAction Stop
+    }
+}
+
+function Set-LanRemoteAccessPingRule {
+    param([Parameter(Mandatory)]$Plan)
+    $parameters = @{
+        PolicyStore = 'PersistentStore'
+        Enabled = 'True'
+        Direction = 'Inbound'
+        Action = 'Allow'
+        Profile = 'Any'
+        Protocol = 'ICMPv4'
+        IcmpType = '8'
+        LocalAddress = $Plan.Address
+        RemoteAddress = $Plan.RemoteAddresses
+        InterfaceAlias = [System.Management.Automation.WildcardPattern]::Escape($Plan.InterfaceAlias)
+        EdgeTraversalPolicy = 'Block'
+        ErrorAction = 'Stop'
+    }
+    if (Get-NetFirewallRule -PolicyStore PersistentStore -Name $Plan.PingRuleName -ErrorAction SilentlyContinue) {
+        Set-NetFirewallRule -Name $Plan.PingRuleName @parameters
+    }
+    else {
+        New-NetFirewallRule -Name $Plan.PingRuleName -DisplayName 'Jinda - IPv4 ping from LAN and WireGuard' @parameters | Out-Null
     }
 }
 
@@ -293,7 +323,7 @@ function Invoke-LanRemoteAccessSetup {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory)]$Plan)
     $ErrorActionPreference = 'Stop'
-    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Gekozen remote-toegang inschakelen en tot dit LAN begrenzen')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Gekozen remote-toegang en IPv4-ping toestaan voor dit LAN en WireGuard 10.6.0.3')) { return }
     Assert-LanRemoteAccessAdministrator
     # Scope the rules before enabling, and again afterwards because Microsoft's
     # remoting setup may update standard firewall rules itself.
@@ -332,6 +362,8 @@ function Invoke-LanRemoteAccessSetup {
         Start-Service -Name TermService -ErrorAction Stop
     }
 
+    Set-LanRemoteAccessPingRule -Plan $Plan
+
     $services = @()
     $ports = @()
     if ($Plan.EnableWinRM) { $services += 'WinRM'; $ports += $Plan.WinRMPort }
@@ -341,6 +373,7 @@ function Invoke-LanRemoteAccessSetup {
         Where-Object { $_.LocalPort -in $ports } |
         Select-Object LocalAddress, LocalPort, State
     Write-Host 'Instellingen toegepast. Test de bereikbaarheid en aanmelding nog vanaf de andere pc.'
+    Write-Host ("Toegestane bronadressen voor gekozen remote-toegang en IPv4-pings: {0}." -f ($Plan.RemoteAddresses -join ', '))
     Write-Host 'WinRM-clientauthenticatie (eventueel TrustedHosts/HTTPS) wordt niet door dit script ingesteld.'
 }
 # END LAN remote access.
@@ -471,7 +504,7 @@ function Invoke-JindaConfiguration {
     if ($remotePlan) {
         Write-Host ''
         Write-Host 'Gekozen LAN-toegang configureren...'
-        $remotePlan | Select-Object Address, Subnet, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
+        $remotePlan | Select-Object Address, RemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
         Invoke-LanRemoteAccessSetup -Plan $remotePlan | Out-Host
     }
     return 0

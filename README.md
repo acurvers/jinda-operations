@@ -169,7 +169,7 @@ een toegestane weergavetaal worden geweigerd.
 Al uitgevoerde stappen worden bij een fout niet teruggedraaid. Na het
 oplossen van de fout kun je het betreffende script opnieuw uitvoeren.
 
-## Optionele toegang op afstand via het LAN
+## Optionele toegang op afstand via LAN en WireGuard
 
 De werking van `Enable-LanRemoteAccess.ps1` is opgenomen in het bestaande
 configuratiescript. RDP en WinRM zijn afzonderlijk te kiezen; zonder toestemming
@@ -179,8 +179,15 @@ niet aangepast.
 - RDP: NLA aan, bestaande RDP-poort behouden, TCP en UDP; TermService wordt niet herstart.
 - WinRM: Windows PowerShell-remoting op HTTP/TCP 5985, Windows-authenticatie;
   Basic en onversleutelde berichten blijven uit.
-- Alleen Windows-standaardregels voor de gekozen onderdelen worden begrensd tot
-  het gekozen lokale IPv4-adres, de interface en het werkelijke LAN-subnet.
+- Windows-standaardregels voor de gekozen onderdelen staan het werkelijke
+  LAN-subnet en WireGuard-client `10.6.0.3` toe. Het gekozen lokale IPv4-adres
+  en de LAN-interface blijven de bestemming. Dit geldt voor RDP (TCP/UDP)
+  en de WinRM-regels, ook nadat Windows remoting opnieuw configureert.
+- Zodra RDP of WinRM wordt gekozen, staat de eigen regel
+  `Jinda-LAN-WireGuard-ICMPv4-In` ook IPv4-pings (ICMP echo request, type 8)
+  toe vanaf hetzelfde LAN-subnet en `10.6.0.3`. Er komen geen extra vragen.
+  Bij opnieuw uitvoeren wordt de regel bijgewerkt; er ontstaan geen duplicaten.
+  Als beide remote-opties op nee staan, worden ook de pingregels niet aangepast.
 - Het netwerkprofiel, accounts, wachtwoorden, TrustedHosts en routerinstellingen
   blijven ongewijzigd. Andere custom firewallregels blijven ongemoeid en kunnen
   de uiteindelijke toegang beinvloeden.

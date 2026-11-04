@@ -23,6 +23,7 @@ Describe 'Preview and target validation without system changes' {
         $global:LanRemoteAccessFixtureFirewallEnabled = 'True'
         $global:LanRemoteAccessFixtureAllowLocal = 'NotConfigured'
         $global:LanRemoteAccessFixtureGroupPolicy = $false
+        $global:LanRemoteAccessFixturePingPolicy = $false
         $global:LanRemoteAccessFixtureAddresses = @(
             [pscustomobject]@{ AddressState = 'Preferred'; PrefixLength = 24; InterfaceIndex = 7; InterfaceAlias = 'Ethernet' }
         )
@@ -43,9 +44,13 @@ Describe 'Preview and target validation without system changes' {
             $sourceType = if ($global:LanRemoteAccessFixtureGroupPolicy -and $PolicyStore -eq 'ActiveStore') { 'GroupPolicy' } else { 'Local' }
             [pscustomobject]@{ Name = $ruleName; Direction = 'Inbound'; PolicyStoreSourceType = $sourceType }
         }
+        if ($Name -contains 'Jinda-LAN-WireGuard-ICMPv4-In' -and $global:LanRemoteAccessFixturePingPolicy) {
+            [pscustomobject]@{ Name = 'Jinda-LAN-WireGuard-ICMPv4-In'; Direction = 'Inbound'; PolicyStoreSourceType = 'GroupPolicy' }
+        }
     }
     Mock Enable-PSRemoting { throw 'Unexpected mutation in preview' }
     Mock Set-NetFirewallRule { throw 'Unexpected mutation in preview' }
+    Mock New-NetFirewallRule { throw 'Unexpected mutation in preview' }
     Mock Set-ItemProperty { throw 'Unexpected mutation in preview' }
     Mock Set-Service { throw 'Unexpected mutation in preview' }
     Mock Start-Service { throw 'Unexpected mutation in preview' }
@@ -55,6 +60,7 @@ Describe 'Preview and target validation without system changes' {
         $plan = Get-LanRemoteAccessPlan -EnableRemoteDesktop -EnableWinRM -Address '192.168.50.200'
         $plan.Address | Should Be '192.168.50.200'
         $plan.Subnet | Should Be '192.168.50.0/24'
+        ($plan.RemoteAddresses -join ',') | Should Be '192.168.50.0/24,10.6.0.3'
         $plan.NetworkProfile | Should Be 'Public'
         $plan.RDPPort | Should Be 3389
         $plan.WinRMPort | Should Be 5985
@@ -96,6 +102,12 @@ Describe 'Preview and target validation without system changes' {
         $global:LanRemoteAccessFixturePort = 3390
         (Get-LanRemoteAccessPlan -EnableRemoteDesktop -EnableWinRM -Address '192.168.50.200').RDPPort | Should Be 3390
     }
+
+    It 'refuses a ping rule controlled by Group Policy before making changes' {
+        $global:LanRemoteAccessFixturePingPolicy = $true
+        { Get-LanRemoteAccessPlan -EnableWinRM -Address '192.168.50.200' } | Should Throw 'centraal beheerd'
+        Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
+    }
     It 'rejects an RDP port conflicting with WinRM' {
         $global:LanRemoteAccessFixturePort = 5985
         { Get-LanRemoteAccessPlan -EnableRemoteDesktop -EnableWinRM -Address '192.168.50.200' } | Should Throw
@@ -118,8 +130,11 @@ Describe 'Preview and target validation without system changes' {
 
 Describe 'Applying the plan with every mutating command mocked' {
     BeforeEach {
+        $script:pingRuleExists = $false
         $script:testPlan = [pscustomobject]@{
             Address = '192.168.50.200'; Subnet = '192.168.50.0/24'; InterfaceAlias = 'Ethernet'
+            RemoteAddresses = @('192.168.50.0/24', '10.6.0.3')
+            PingRuleName = 'Jinda-LAN-WireGuard-ICMPv4-In'
             RDPPort = 3390; WinRMPort = 5985; EnableRemoteDesktop = $true; EnableWinRM = $true
             RuleNames = @('WINRM-*', 'RemoteDesktop*')
             Rules = @(
@@ -133,11 +148,16 @@ Describe 'Applying the plan with every mutating command mocked' {
     Mock Assert-LanRemoteAccessAdministrator {}
     Mock Enable-PSRemoting {}
     Mock Get-NetFirewallRule {
+        if ($Name -contains $script:testPlan.PingRuleName) {
+            if ($script:pingRuleExists) { [pscustomobject]@{ Name = $script:testPlan.PingRuleName; Direction = 'Inbound' } }
+            return
+        }
         foreach ($rule in $script:testPlan.Rules) {
             [pscustomobject]@{ Name = $rule.Name; Direction = 'Inbound' }
         }
     }
     Mock Set-NetFirewallRule {}
+    Mock New-NetFirewallRule { $script:pingRuleExists = $true }
     Mock Set-ItemProperty {}
     Mock Set-Service {}
     Mock Start-Service {}
@@ -153,7 +173,8 @@ Describe 'Applying the plan with every mutating command mocked' {
     It 'scopes every managed rule before and after enabling remoting' {
         Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
         Assert-MockCalled Set-NetFirewallRule -Times 8 -Exactly -Scope It -ParameterFilter {
-            $RemoteAddress -eq '192.168.50.0/24' -and $LocalAddress -eq '192.168.50.200' -and
+            @($RemoteAddress).Count -eq 2 -and $RemoteAddress -contains '192.168.50.0/24' -and
+            $RemoteAddress -contains '10.6.0.3' -and $LocalAddress -eq '192.168.50.200' -and
             (@($InterfaceAlias)[0]).IsMatch('Ethernet') -and -not (@($InterfaceAlias)[0]).IsMatch('Ethernet 2') -and
             $Profile -eq 'Any' -and $EdgeTraversalPolicy -eq 'Block'
         }
@@ -165,6 +186,29 @@ Describe 'Applying the plan with every mutating command mocked' {
         Set-LanRemoteAccessRuleScope -Plan $script:testPlan
         Assert-MockCalled Set-NetFirewallRule -Times 4 -Exactly -Scope It -ParameterFilter {
             (@($InterfaceAlias)[0]).IsMatch('LAN [1]') -and -not (@($InterfaceAlias)[0]).IsMatch('LAN 1')
+        }
+    }
+
+    It 'allows only IPv4 echo requests from the LAN and this WireGuard client' {
+        Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
+        Assert-MockCalled New-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Name -eq 'Jinda-LAN-WireGuard-ICMPv4-In' -and $PolicyStore -eq 'PersistentStore' -and
+            $Direction -eq 'Inbound' -and $Enabled -eq 'True' -and $Action -eq 'Allow' -and
+            $Protocol -eq 'ICMPv4' -and @($IcmpType).Count -eq 1 -and $IcmpType -contains '8' -and
+            $LocalAddress -eq '192.168.50.200' -and @($RemoteAddress).Count -eq 2 -and
+            $RemoteAddress -contains '192.168.50.0/24' -and $RemoteAddress -contains '10.6.0.3' -and
+            (@($InterfaceAlias)[0]).IsMatch('Ethernet') -and $EdgeTraversalPolicy -eq 'Block'
+        }
+    }
+
+    It 'updates the same ping rule on repeat runs while retaining both source addresses' {
+        Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
+        Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
+        Assert-MockCalled New-NetFirewallRule -Times 1 -Exactly -Scope It
+        Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Name -eq 'Jinda-LAN-WireGuard-ICMPv4-In' -and $Protocol -eq 'ICMPv4' -and
+            $IcmpType -contains '8' -and @($RemoteAddress).Count -eq 2 -and
+            $RemoteAddress -contains '192.168.50.0/24' -and $RemoteAddress -contains '10.6.0.3'
         }
     }
     It 'enables only needed rules and preserves the RDP port' {
@@ -189,7 +233,9 @@ Describe 'Applying the plan with every mutating command mocked' {
     It 'restores the scope even if enabling WinRM fails' {
         Mock Enable-PSRemoting { throw 'Simulated WinRM setup failure' }
         { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw
-        Assert-MockCalled Set-NetFirewallRule -Times 8 -Exactly -Scope It -ParameterFilter { $RemoteAddress -eq '192.168.50.0/24' }
+        Assert-MockCalled Set-NetFirewallRule -Times 8 -Exactly -Scope It -ParameterFilter {
+            @($RemoteAddress).Count -eq 2 -and $RemoteAddress -contains '192.168.50.0/24' -and $RemoteAddress -contains '10.6.0.3'
+        }
         Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
     }
     It 'refuses mutation without administrator rights' {
@@ -197,6 +243,7 @@ Describe 'Applying the plan with every mutating command mocked' {
         { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
         Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
     }
     It 'also scopes a standard rule newly created by Windows setup' {
         Mock Assert-LanRemoteAccessAdministrator {}
@@ -205,7 +252,8 @@ Describe 'Applying the plan with every mutating command mocked' {
         }
         Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
         Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Name -eq 'WINRM-HTTP-In-TCP-PUBLIC' -and $RemoteAddress -eq '192.168.50.0/24'
+            $Name -eq 'WINRM-HTTP-In-TCP-PUBLIC' -and @($RemoteAddress).Count -eq 2 -and
+            $RemoteAddress -contains '192.168.50.0/24' -and $RemoteAddress -contains '10.6.0.3'
         }
     }
     It 'leaves WinRM untouched when only RDP was chosen' {
@@ -236,5 +284,6 @@ Describe 'Applying the plan with every mutating command mocked' {
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Service -Times 0 -Exactly -Scope It
+        Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
     }
 }
