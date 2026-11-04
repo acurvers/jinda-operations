@@ -16,22 +16,20 @@ Describe 'All requested Jinda applications' {
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
     }
 
-    It 'installs all packages and allows stable PowerShell upgrades with the machine MSI' {
+    It 'allows upgrades for every package and keeps the stable PowerShell machine MSI' {
         $result = Install-JindaSoftware
         $result | Should Be $false
         $script:wingetCalls.Count | Should Be 15
         ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
         ($script:wingetCalls[1] -contains 'TeamViewer.TeamViewer') | Should Be $true
         ($script:wingetCalls[1] -contains 'nullsoft') | Should Be $true
-        ($script:wingetCalls[0] -contains '--no-upgrade') | Should Be $true
-        ($script:wingetCalls[1] -contains '--no-upgrade') | Should Be $true
         ($script:wingetCalls[2] -contains 'Microsoft.PowerShell') | Should Be $true
         ($script:wingetCalls[2] -contains 'Microsoft.PowerShell.Preview') | Should Be $false
-        ($script:wingetCalls[2] -contains '--no-upgrade') | Should Be $false
         ($script:wingetCalls[2] -contains '--version') | Should Be $false
         ($script:wingetCalls[2] -contains 'wix') | Should Be $true
         foreach ($call in $script:wingetCalls) {
             ($call -contains '--silent') | Should Be $true
+            ($call -contains '--no-upgrade') | Should Be $false
         }
     }
 

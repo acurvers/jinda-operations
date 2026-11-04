@@ -107,9 +107,10 @@ doorgegeven. Init start Windows niet zelf opnieuw op.
 | VLC | VideoLAN.VLC / winget | Alle gebruikers |
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
 
-WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Bestaande apps
-worden overgeslagen; PowerShell wordt wel bijgewerkt naar de nieuwste stabiele
-versie. De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
+WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Alle apps in de
+WinGet-lijst worden geinstalleerd of bijgewerkt naar de nieuwste versie die de
+gekozen bron aanbiedt. Is er geen nieuwere versie, dan gaat het script verder.
+De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
 Dezelfde TeamViewer-installatie staat maar eenmaal in de lijst.
 
 De opgegeven oude ID's Microsoft.OneNote, LogMeIn.LastPass en WhatsApp.WhatsApp

@@ -3,8 +3,8 @@
 .SYNOPSIS
 Installeert de Jinda-apps via WinGet en de officiele Yodeck Windows-installer.
 .DESCRIPTION
-Installeert waar ondersteund voor alle gebruikers. Bestaande app-installaties
-worden overgeslagen; een oudere PowerShell 7 wordt bijgewerkt.
+Installeert waar ondersteund voor alle gebruikers. Bestaande WinGet-apps
+worden bijgewerkt als de gekozen bron een nieuwere versie aanbiedt.
 Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
 De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
 Bij een Chrome-fout gaat de installatie verder met een waarschuwing.
@@ -221,22 +221,22 @@ function Install-JindaSoftware {
 
     # Scope is only forced when the manifest supports it; empty means installer default.
     $packages = @(
-        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
-        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade', '--installer-type', 'nullsoft') }
+        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
-        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         # Current desktop OneNote, not the retired OneNote for Windows 10.
-        @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @('--no-upgrade') }
-        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
-        @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @('--no-upgrade') }
-        @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @('--no-upgrade') }
-        @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
-        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @('--no-upgrade') }
-        @{ Id = 'Git.Git'; Name = 'Git (inclusief Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
-        @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
-        @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--no-upgrade', '--installer-type', 'msix') }
-        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @('--no-upgrade') }
-        @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @('--no-upgrade') }
+        @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
+        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @() }
+        @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
+        @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @() }
+        @{ Id = 'Git.Git'; Name = 'Git (inclusief Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
+        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
+        @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
     )
     $restartNeeded = $false
     foreach ($package in $packages) {
@@ -250,14 +250,14 @@ function Install-JindaSoftware {
             '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
         ) + $package.Extra
         if ($package.Scope) { $wingetArguments += @('--scope', $package.Scope) }
-        Write-Host "$($package.Name) installeren via WinGet..."
+        Write-Host "$($package.Name) installeren of bijwerken via WinGet..."
         try {
             & $winget.Source @wingetArguments | Out-Host
             $wingetExitCode = $LASTEXITCODE
             $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
             switch ($exitCodeHex) {
                 '00000000' { Write-Host "$($package.Name) is beschikbaar." }
-                '8A15002B' { Write-Host "$($package.Name) is al aanwezig; overgeslagen." }
+                '8A15002B' { Write-Host "$($package.Name): geen nieuwere versie beschikbaar via WinGet." }
                 '8A150061' { Write-Host "$($package.Name) is al geinstalleerd; overgeslagen." }
                 '00000BC2' { $restartNeeded = $true }
                 default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
