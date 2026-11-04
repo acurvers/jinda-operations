@@ -188,7 +188,7 @@ voor dat onderdeel worden de bijbehorende services, instellingen en firewallrege
 niet aangepast.
 
 - RDP: NLA aan, bestaande RDP-poort behouden, TCP en UDP; TermService wordt niet herstart.
-- WinRM: Windows PowerShell-remoting op HTTP/TCP 5985, Windows-authenticatie;
+- WinRM: PowerShell 7-remoting via `PowerShell.7` op HTTP/TCP 5985, Windows-authenticatie;
   Basic en onversleutelde berichten blijven uit.
 - Windows-standaardregels voor de gekozen onderdelen staan het werkelijke
   LAN-subnet en WireGuard-client `10.6.0.3` toe. Het gekozen lokale IPv4-adres
@@ -202,6 +202,26 @@ niet aangepast.
 - Het netwerkprofiel, accounts, wachtwoorden, TrustedHosts en routerinstellingen
   blijven ongewijzigd. Andere custom firewallregels blijven ongemoeid en kunnen
   de uiteindelijke toegang beinvloeden.
+
+Bij WinRM = Y gebruikt de configuratie de nieuwste geinstalleerde stabiele,
+native 64-bits PowerShell 7 om het endpoint `PowerShell.7` in te richten.
+Een ouder endpoint wordt bijgewerkt met behoud van zijn toegangsrechten.
+De app-installatie werkt PowerShell vooraf bij als er een update beschikbaar is.
+Bij apps = N wordt de nieuwste al aanwezige versie gebruikt; ontbreekt PowerShell 7,
+dan stopt de configuratie vooraf met een duidelijke melding. WinRM = N laat ook
+dit endpoint ongewijzigd. De inrichting kan de WinRM-service herstarten.
+
+Verbind vanaf je beheer-pc expliciet met het PowerShell 7-endpoint:
+
+~~~powershell
+$cred = Get-Credential
+Enter-PSSession -ComputerName 192.168.50.200 -ConfigurationName PowerShell.7 -Authentication Negotiate -Credential $cred
+~~~
+
+Dit geldt ook voor `Invoke-Command` en `New-PSSession`. Zonder
+`-ConfigurationName PowerShell.7` kiest de client nog het bestaande
+Windows PowerShell 5.1-endpoint. Zie de
+[Microsoft-uitleg over PowerShell 7-remoting](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/enable-psremoting?view=powershell-7.6).
 
 Het script controleert het actuele adres, de Windows-editie, firewall en blokkerend
 beleid voordat de Windows-configuratie wijzigt. De instellingen blijven na herstart

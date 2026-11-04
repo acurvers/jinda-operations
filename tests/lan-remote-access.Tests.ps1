@@ -17,6 +17,7 @@ Describe 'LAN subnet calculation' {
 
 Describe 'Preview and target validation without system changes' {
     BeforeEach {
+        Mock Get-JindaPowerShell7RemotingRuntime { [pscustomobject]@{ Path = 'C:\Program Files\PowerShell\7\pwsh.exe'; Version = [version]'7.6.9' } }
         $global:LanRemoteAccessFixtureEdition = 'Professional'
         $global:LanRemoteAccessFixturePort = 3389
         $global:LanRemoteAccessFixtureDenyRdp = 0
@@ -64,6 +65,14 @@ Describe 'Preview and target validation without system changes' {
         $plan.NetworkProfile | Should Be 'Public'
         $plan.RDPPort | Should Be 3389
         $plan.WinRMPort | Should Be 5985
+        $plan.PowerShell7.Version | Should Be ([version]'7.6.9')
+    }
+
+    It 'requires PowerShell 7 before changing anything when WinRM is selected' {
+        Mock Get-JindaPowerShell7RemotingRuntime { throw 'WinRM requires an installed stable 64-bit PowerShell 7' }
+        { Get-LanRemoteAccessPlan -EnableWinRM -Address '192.168.50.200' } | Should Throw 'WinRM requires'
+        Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
     }
     
     It 'refuses the wrong computer' {
@@ -117,6 +126,7 @@ Describe 'Preview and target validation without system changes' {
         $plan.EnableRemoteDesktop | Should Be $true
         $plan.EnableWinRM | Should Be $false
         @($plan.Rules | Where-Object Name -like 'WINRM-*').Count | Should Be 0
+        Assert-MockCalled Get-JindaPowerShell7RemotingRuntime -Times 0 -Exactly -Scope It
     }
     It 'prepares WinRM alone without RDP rules or RDP policy checks' {
         $global:LanRemoteAccessFixtureDenyRdp = 1
@@ -130,12 +140,16 @@ Describe 'Preview and target validation without system changes' {
 
 Describe 'Applying the plan with every mutating command mocked' {
     BeforeEach {
+        Mock Assert-LanRemoteAccessAdministrator {}
+        Mock Enable-PSRemoting {}
+        Mock Invoke-JindaPowerShell7Remoting {}
         $script:pingRuleExists = $false
         $script:testPlan = [pscustomobject]@{
             Address = '192.168.50.200'; Subnet = '192.168.50.0/24'; InterfaceAlias = 'Ethernet'
             RemoteAddresses = @('192.168.50.0/24', '10.6.0.3')
             PingRuleName = 'Jinda-LAN-WireGuard-ICMPv4-In'
             RDPPort = 3390; WinRMPort = 5985; EnableRemoteDesktop = $true; EnableWinRM = $true
+            PowerShell7 = [pscustomobject]@{ Path = 'C:\Program Files\PowerShell\7\pwsh.exe'; Version = [version]'7.6.9' }
             RuleNames = @('WINRM-*', 'RemoteDesktop*')
             Rules = @(
                 [pscustomobject]@{ Name = 'WINRM-HTTP-In-TCP' },
@@ -145,8 +159,6 @@ Describe 'Applying the plan with every mutating command mocked' {
             )
         }
     }
-    Mock Assert-LanRemoteAccessAdministrator {}
-    Mock Enable-PSRemoting {}
     Mock Get-NetFirewallRule {
         if ($Name -contains $script:testPlan.PingRuleName) {
             if ($script:pingRuleExists) { [pscustomobject]@{ Name = $script:testPlan.PingRuleName; Direction = 'Inbound' } }
@@ -179,6 +191,7 @@ Describe 'Applying the plan with every mutating command mocked' {
             $Profile -eq 'Any' -and $EdgeTraversalPolicy -eq 'Block'
         }
         Assert-MockCalled Enable-PSRemoting -Times 1 -Exactly -Scope It -ParameterFilter { $Force -and $SkipNetworkProfileCheck }
+        Assert-MockCalled Invoke-JindaPowerShell7Remoting -Times 1 -Exactly -Scope It -ParameterFilter { $Executable -eq 'C:\Program Files\PowerShell\7\pwsh.exe' }
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It -ParameterFilter { $RemoteAddress -eq 'Any' }
     }
     It 'treats special characters in interface names literally' {
@@ -238,6 +251,14 @@ Describe 'Applying the plan with every mutating command mocked' {
         }
         Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
     }
+    It 'restores LAN and WireGuard firewall scope even if the PowerShell 7 worker fails' {
+        Mock Invoke-JindaPowerShell7Remoting { throw 'PowerShell 7 WinRM configuration failed' }
+        { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw 'PowerShell 7 WinRM'
+        Assert-MockCalled Set-NetFirewallRule -Times 8 -Exactly -Scope It -ParameterFilter {
+            @($RemoteAddress).Count -eq 2 -and $RemoteAddress -contains '192.168.50.0/24' -and $RemoteAddress -contains '10.6.0.3'
+        }
+        Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
+    }
     It 'refuses mutation without administrator rights' {
         Mock Assert-LanRemoteAccessAdministrator { throw 'Not elevated' }
         { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw
@@ -262,6 +283,7 @@ Describe 'Applying the plan with every mutating command mocked' {
         $script:testPlan.Rules = @($script:testPlan.Rules | Where-Object Name -like 'RemoteDesktop*')
         Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
         Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaPowerShell7Remoting -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-Item -Times 0 -Exactly -Scope It
         Assert-MockCalled Test-WSMan -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It -ParameterFilter { $Name -like 'WINRM-*' }
@@ -281,6 +303,7 @@ Describe 'Applying the plan with every mutating command mocked' {
     It 'makes no changes in a direct WhatIf preview' {
         Invoke-LanRemoteAccessSetup -Plan $script:testPlan -WhatIf
         Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaPowerShell7Remoting -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Service -Times 0 -Exactly -Scope It

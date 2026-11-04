@@ -15,7 +15,8 @@ US (default) or USInternational. Regional date and number formats are preserved.
 .PARAMETER EnableRemoteDesktop
 Enables RDP with NLA. Without this switch, RDP settings are unchanged.
 .PARAMETER EnableWinRM
-Enables Windows PowerShell remoting. Without this switch, WinRM settings are unchanged.
+Enables Windows PowerShell and the latest installed stable PowerShell 7 remoting.
+Connect with -ConfigurationName PowerShell.7. Without this switch, WinRM settings are unchanged.
 .PARAMETER LanIPAddress
 Active IPv4 address on this PC; required when a remote access option is selected.
 #>
@@ -196,6 +197,67 @@ function Assert-LanRemoteAccessAdministrator {
     }
 }
 
+function Get-JindaPowerShell7RemotingRuntime {
+    $runtime = Get-JindaPowerShellCandidates | Where-Object { $_.Version.Major -eq 7 } |
+        Sort-Object Version -Descending | Select-Object -First 1
+    if (-not $runtime) {
+        throw 'WinRM requires an installed stable 64-bit PowerShell 7. Choose app installation first, then enable WinRM again.'
+    }
+    return $runtime
+}
+
+function Enable-JindaPowerShell7Endpoint {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+    $ErrorActionPreference = 'Stop'
+    if (-not $PSCmdlet.ShouldProcess('PowerShell.7', 'Enable remoting with this PowerShell installation')) { return }
+    if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -ne 7 -or
+        $PSVersionTable.PSVersion.ToString() -match '-') {
+        throw 'The WinRM endpoint worker must run in stable PowerShell 7.'
+    }
+    Enable-PSRemoting -SkipNetworkProfileCheck -Force -Confirm:$false -ErrorAction Stop
+    $endpoint = Get-PSSessionConfiguration -Name 'PowerShell.7' -ErrorAction Stop
+    $versionedName = 'PowerShell.' + $PSVersionTable.PSVersion.ToString()
+    $expectedPlugin = (Get-WSManInstance -ResourceURI 'winrm/config/plugin' -SelectorSet @{ Name = $versionedName } -ErrorAction Stop).Filename
+    $plugin = (Get-WSManInstance -ResourceURI 'winrm/config/plugin' -SelectorSet @{ Name = 'PowerShell.7' } -ErrorAction Stop).Filename
+    if (-not $expectedPlugin) { throw 'The version-specific PowerShell 7 WinRM plugin was not found.' }
+    # Enable-PSRemoting keeps existing endpoints. Refresh an older major-name
+    # endpoint from this runtime while retaining its access-control descriptor.
+    # PSVersion metadata omits the patch number, so compare versioned plugin paths.
+    if ($plugin -ine $expectedPlugin) {
+        $parameters = @{ Name = 'PowerShell.7'; Force = $true; Confirm = $false; ErrorAction = 'Stop' }
+        if (-not $endpoint.SecurityDescriptorSddl) { throw 'Cannot preserve the existing PowerShell.7 endpoint permissions.' }
+        $parameters.SecurityDescriptorSddl = $endpoint.SecurityDescriptorSddl
+        Register-PSSessionConfiguration @parameters | Out-Null
+        $endpoint = Get-PSSessionConfiguration -Name 'PowerShell.7' -ErrorAction Stop
+        $plugin = (Get-WSManInstance -ResourceURI 'winrm/config/plugin' -SelectorSet @{ Name = 'PowerShell.7' } -ErrorAction Stop).Filename
+    }
+    $endpointVersion = [version]$endpoint.PSVersion
+    if ($plugin -ine $expectedPlugin -or $endpointVersion.Major -ne 7 -or
+        $endpointVersion.Minor -ne $PSVersionTable.PSVersion.Minor -or
+        [string]$endpoint.Enabled -ne 'True') {
+        throw 'PowerShell.7 endpoint verification failed: it must be enabled and use the selected PowerShell version.'
+    }
+    Write-Host "WinRM endpoint PowerShell.7 is enabled for PowerShell $($PSVersionTable.PSVersion)."
+}
+
+function Invoke-JindaPowerShell7Remoting {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([Parameter(Mandatory)][string]$Executable)
+    $ErrorActionPreference = 'Stop'
+    $PSNativeCommandUseErrorActionPreference = $false
+    if (-not $PSCmdlet.ShouldProcess($Executable, 'Configure the PowerShell.7 WinRM endpoint')) { return }
+    # Run the function in the native runtime, never through the 5.1 compatibility layer.
+    $command = '$ErrorActionPreference = ''Stop''; try { & {' +
+        ${function:Enable-JindaPowerShell7Endpoint}.ToString() +
+        '}; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }'
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    & $Executable -NoProfile -NonInteractive -ExecutionPolicy Bypass -OutputFormat Text -EncodedCommand $encoded | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "PowerShell 7 WinRM configuration failed (exit code $LASTEXITCODE)."
+    }
+}
+
 function Get-LanRemoteAccessPlan {
     param(
         [Parameter(Mandatory)][System.Net.IPAddress]$Address,
@@ -208,6 +270,8 @@ function Get-LanRemoteAccessPlan {
     if ($PSVersionTable.PSEdition -ne 'Desktop') {
         throw 'Use Windows PowerShell 5.1 (powershell.exe), not PowerShell 7 (pwsh.exe).'
     }
+    $powerShell7 = $null
+    if ($EnableWinRM) { $powerShell7 = Get-JindaPowerShell7RemotingRuntime }
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
     $edition = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
     if ($os.ProductType -ne 1 -or [int]$os.BuildNumber -lt 22000 -or
@@ -278,6 +342,7 @@ function Get-LanRemoteAccessPlan {
         RDPPort = $port
         EnableRemoteDesktop = [bool]$EnableRemoteDesktop
         EnableWinRM = [bool]$EnableWinRM
+        PowerShell7 = $powerShell7
         RuleNames = $ruleNames
         Rules = $rules
     }
@@ -331,6 +396,8 @@ function Invoke-LanRemoteAccessSetup {
     if ($Plan.EnableWinRM) {
         try {
             Enable-PSRemoting -SkipNetworkProfileCheck -Force -Confirm:$false -ErrorAction Stop
+            Write-Host "Configuring WinRM using PowerShell $($Plan.PowerShell7.Version)..."
+            Invoke-JindaPowerShell7Remoting -Executable $Plan.PowerShell7.Path
         }
         finally {
             # Include any extra standard rule created by Microsoft's setup.
@@ -375,6 +442,10 @@ function Invoke-LanRemoteAccessSetup {
     Write-Host 'Settings applied. Test connectivity and sign-in from the other PC.'
     Write-Host ("Allowed source addresses for selected remote access and IPv4 pings: {0}." -f ($Plan.RemoteAddresses -join ', '))
     Write-Host 'This script does not configure WinRM client authentication (such as TrustedHosts/HTTPS).'
+    if ($Plan.EnableWinRM) {
+        Write-Host "For PowerShell 7, connect with: Enter-PSSession -ComputerName $($Plan.Address) -ConfigurationName PowerShell.7 -Authentication Negotiate -Credential (Get-Credential)"
+        Write-Host 'Without -ConfigurationName PowerShell.7, the client still selects Windows PowerShell 5.1.'
+    }
 }
 # END LAN remote access.
 
