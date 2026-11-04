@@ -201,14 +201,15 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 0
     }
 
-    It 'includes all fourteen active WinGet packages once, excluding Discord, and Yodeck once in the same run' {
+    It 'includes all fourteen active WinGet packages once, excluding Discord and Teams, and Yodeck once in the same run' {
         Install-JindaSoftware | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
         $expected = @('Google.Chrome','TeamViewer.TeamViewer','Microsoft.PowerShell','Microsoft.VisualStudioCode',
             'XPFFZHVGQWWLHB','Notepad++.Notepad++','Reolink.Reolink','dotPDN.PaintDotNet',
-            'LastPass.LastPass','Git.Git','Zoom.Zoom','Microsoft.Teams','9NKSQGP7F2NH','VideoLAN.VLC')
+            'LastPass.LastPass','Git.Git','Zoom.Zoom','9NKSQGP7F2NH','VideoLAN.VLC','voidtools.Everything')
         @($ids | Select-Object -Unique).Count | Should Be 14
         ($ids -contains 'Discord.Discord') | Should Be $false
+        ($ids -contains 'Microsoft.Teams') | Should Be $false
         foreach ($id in $expected) { ($ids -contains $id) | Should Be $true }
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
@@ -224,8 +225,6 @@ Describe 'All requested Jinda applications' {
             }
             if ($id -in @('XPFFZHVGQWWLHB', '9NKSQGP7F2NH', 'Reolink.Reolink', 'LastPass.LastPass')) {
                 ($call -contains '--scope') | Should Be $false
-            } elseif ($id -eq 'Microsoft.Teams') {
-                $call[[array]::IndexOf($call, '--scope') + 1] | Should Be 'user'
             } else {
                 $call[[array]::IndexOf($call, '--scope') + 1] | Should Be 'machine'
             }

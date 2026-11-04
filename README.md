@@ -137,15 +137,16 @@ ook deze WinGet-update overgeslagen.
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
 | Notepad++ | Notepad++.Notepad++ / winget | Alle gebruikers |
-| Discord | Discord.Discord / winget | Uitvoerend account |
+| Discord (tijdelijk uitgeschakeld) | Discord.Discord / winget | Wordt momenteel niet geinstalleerd |
 | Reolink Client | Reolink.Reolink / winget | Standaard van installer |
 | Paint.NET | dotPDN.PaintDotNet / winget | Alle gebruikers |
 | LastPass | LastPass.LastPass / winget | Standaard van installer |
 | Git inclusief Git Bash | Git.Git / winget | Alle gebruikers |
 | Zoom | Zoom.Zoom / winget | Alle gebruikers |
-| Teams | Microsoft.Teams / winget, MSIX | Uitvoerend account |
+| Teams (tijdelijk uitgeschakeld) | Microsoft.Teams / winget, MSIX | Wordt momenteel niet geinstalleerd |
 | WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 | VLC | VideoLAN.VLC / winget | Alle gebruikers |
+| Everything | voidtools.Everything / winget | Alle gebruikers |
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
 
 WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Alle apps in de

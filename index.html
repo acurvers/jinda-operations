@@ -28,7 +28,7 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>Windows 11 Pro inrichten: optioneel <strong>16 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
+    <p>Windows 11 Pro inrichten: optioneel <strong>15 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Kies aan het begin <strong>apps installeren, Remote Desktop en WinRM: y/n</strong> (zo nodig ook het LAN). Daarna loopt alles zonder verdere vragen door.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
@@ -60,15 +60,16 @@
       <li><img src="assets/icons/vscode.png" alt="" width="28" height="28"><span>Visual Studio Code <small>(met PowerShell-extensie)</small></span></li>
       <li><img src="assets/icons/onenote.png" alt="" width="28" height="28"><span>OneNote</span></li>
       <li><img src="assets/icons/notepadplusplus.ico" alt="" width="28" height="28"><span>Notepad++</span></li>
-      <li><img src="assets/icons/discord.png" alt="" width="28" height="28"><span>Discord</span></li>
+      <li><img src="assets/icons/discord.png" alt="" width="28" height="28"><span>Discord <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/reolink.png" alt="" width="28" height="28"><span>Reolink Client</span></li>
       <li><img src="assets/icons/paintnet.png" alt="" width="28" height="28"><span>Paint.NET</span></li>
       <li><img src="assets/icons/lastpass.ico" alt="" width="28" height="28"><span>LastPass</span></li>
       <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>
       <li><img src="assets/icons/zoom.ico" alt="" width="28" height="28"><span>Zoom</span></li>
-      <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams</span></li>
+      <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/whatsapp.webp" alt="" width="28" height="28"><span>WhatsApp</span></li>
       <li><img src="assets/icons/vlc.png" alt="" width="28" height="28"><span>VLC</span></li>
+      <li><img src="assets/icons/everything.ico" alt="" width="28" height="28"><span>Everything <small>(bestanden zoeken)</small></span></li>
       <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
     </ul>
   </main>
