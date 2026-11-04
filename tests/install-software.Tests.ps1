@@ -25,7 +25,7 @@ Describe 'All requested Jinda applications' {
         $script:wingetUpgradeCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetSequence = New-Object 'System.Collections.Generic.List[string]'
         $script:wingetUpgradeExitCode = 0
-        $script:wingetExitCodes = @(0) * 15
+        $script:wingetExitCodes = @(0) * 14
         $script:throwChrome = $false
         Mock Install-JindaYodeck { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
@@ -46,13 +46,13 @@ Describe 'All requested Jinda applications' {
         foreach ($flag in @('--all', '--force', '--allow-reboot', '--include-unknown')) {
             ($call -contains $flag) | Should Be $false
         }
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'continues when WinGet itself has no newer version' {
         $script:wingetUpgradeExitCode = -1978335189
         Install-JindaSoftware | Should Be $false
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'stops before all apps when the WinGet self-update fails' {
@@ -66,7 +66,7 @@ Describe 'All requested Jinda applications' {
     It 'preserves a WinGet update restart requirement while installing the apps' {
         $script:wingetUpgradeExitCode = 3010
         Install-JindaSoftware | Should Be $true
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'uses the newly resolved WinGet executable for the apps after updating' {
@@ -80,7 +80,7 @@ Describe 'All requested Jinda applications' {
         Install-JindaSoftware | Should Be $false
         $script:updatedWingetUsed | Should Be $true
         $script:wingetResolutions | Should Be 2
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'stops if WinGet disappears after updating instead of using the old executable' {
@@ -96,7 +96,7 @@ Describe 'All requested Jinda applications' {
     It 'allows upgrades for every package and keeps the stable PowerShell machine MSI' {
         $result = Install-JindaSoftware
         $result | Should Be $false
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
         ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
         ($script:wingetCalls[1] -contains 'TeamViewer.TeamViewer') | Should Be $true
         ($script:wingetCalls[1] -contains 'nullsoft') | Should Be $true
@@ -111,9 +111,9 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'accepts already-installed and no-update-needed exit codes' {
-        $script:wingetExitCodes = @(-1978335189, -1978335135, -1978335189) + (@(0) * 12)
+        $script:wingetExitCodes = @(-1978335189, -1978335135, -1978335189) + (@(0) * 11)
         (Install-JindaSoftware) | Should Be $false
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'installs the extension immediately after an already-current VS Code' {
@@ -124,7 +124,7 @@ Describe 'All requested Jinda applications' {
         Install-JindaSoftware | Should Be $false
         $script:extensionInstallPosition | Should Be 4
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 1 -Exactly -Scope It
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'stops the run if the PowerShell extension fails' {
@@ -135,16 +135,16 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'continues installing the remaining packages when the first requests a reboot' {
-        $script:wingetExitCodes = @(3010) + (@(0) * 14)
+        $script:wingetExitCodes = @(3010) + (@(0) * 13)
         (Install-JindaSoftware) | Should Be $true
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'warns about the reported Chrome source error and still attempts every remaining app' {
         $script:wingetExitCodes[0] = -1978335217
         $warnings = @()
         Install-JindaSoftware -WarningVariable warnings | Should Be $false
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
         ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
         ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*continue'
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
@@ -153,7 +153,7 @@ Describe 'All requested Jinda applications' {
     It 'also continues after a Chrome process exception' {
         $script:throwChrome = $true
         Install-JindaSoftware | Should Be $false
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
 
@@ -166,9 +166,9 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'still stops immediately for a failure in each other WinGet app' {
-        foreach ($failedIndex in 1..14) {
+        foreach ($failedIndex in 1..13) {
             $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
-            $script:wingetExitCodes = @(0) * 15
+            $script:wingetExitCodes = @(0) * 14
             $script:wingetExitCodes[$failedIndex] = 1
             { Install-JindaSoftware } | Should Throw 'WinGet failed'
             $script:wingetCalls.Count | Should Be ($failedIndex + 1)
@@ -180,7 +180,7 @@ Describe 'All requested Jinda applications' {
         $script:wingetExitCodes[0] = 1
         $script:wingetExitCodes[2] = 3010
         Install-JindaSoftware | Should Be $true
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
     It 'reports a PowerShell installation failure after the other packages succeed' {
@@ -201,13 +201,14 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 0
     }
 
-    It 'includes all fifteen WinGet packages once and Yodeck once in the same run' {
+    It 'includes all fourteen active WinGet packages once, excluding Discord, and Yodeck once in the same run' {
         Install-JindaSoftware | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
         $expected = @('Google.Chrome','TeamViewer.TeamViewer','Microsoft.PowerShell','Microsoft.VisualStudioCode',
-            'XPFFZHVGQWWLHB','Notepad++.Notepad++','Discord.Discord','Reolink.Reolink','dotPDN.PaintDotNet',
+            'XPFFZHVGQWWLHB','Notepad++.Notepad++','Reolink.Reolink','dotPDN.PaintDotNet',
             'LastPass.LastPass','Git.Git','Zoom.Zoom','Microsoft.Teams','9NKSQGP7F2NH','VideoLAN.VLC')
-        @($ids | Select-Object -Unique).Count | Should Be 15
+        @($ids | Select-Object -Unique).Count | Should Be 14
+        ($ids -contains 'Discord.Discord') | Should Be $false
         foreach ($id in $expected) { ($ids -contains $id) | Should Be $true }
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
@@ -223,7 +224,7 @@ Describe 'All requested Jinda applications' {
             }
             if ($id -in @('XPFFZHVGQWWLHB', '9NKSQGP7F2NH', 'Reolink.Reolink', 'LastPass.LastPass')) {
                 ($call -contains '--scope') | Should Be $false
-            } elseif ($id -in @('Discord.Discord', 'Microsoft.Teams')) {
+            } elseif ($id -eq 'Microsoft.Teams') {
                 $call[[array]::IndexOf($call, '--scope') + 1] | Should Be 'user'
             } else {
                 $call[[array]::IndexOf($call, '--scope') + 1] | Should Be 'machine'
@@ -239,7 +240,7 @@ Describe 'All requested Jinda applications' {
     It 'reports a Yodeck failure after the WinGet apps finish' {
         Mock Install-JindaYodeck { throw 'Yodeck: installation failed' }
         { Install-JindaSoftware } | Should Throw 'Yodeck: installation failed'
-        $script:wingetCalls.Count | Should Be 15
+        $script:wingetCalls.Count | Should Be 14
     }
 
 }
