@@ -211,6 +211,26 @@ Een echte UAC-/installatie-/taalwijzigingsronde moet op de doel-pc worden getest
 GitHub Pages publiceert de hoofdmap van main; init en de twee vaste script-URL's volgen
 de gepubliceerde versie. Er zijn geen losse scripts per programma of instelling.
 
+### Verplichte controle na publicatie
+
+Een geslaagde commit of push betekent nog niet dat de nieuwe versie online staat.
+Voer na elke publicatie deze alleen-lezen-controle uit met de volledige commit-SHA:
+
+~~~powershell
+.\tools\Test-PagesPublication.ps1 -CommitSha <volledige-40-tekens-commit-SHA>
+~~~
+
+De controle wacht maximaal tien minuten op een geslaagde `pages build and deployment`
+voor die commit en vergelijkt de ontvangen bytes van `index.html`, `init.ps1`,
+`install-software.ps1` en `set-windows-english.ps1` met GitHub. De gewone download-URL's
+worden gebruikt, zodat ook achterlopende caches worden opgemerkt. Exitcode 0 is
+publicatie bevestigd; annulering, fouten, verouderde downloads of tijdsoverschrijding
+geven exitcode 1. Er is geen token, extra software of periodieke taak nodig.
+
+Bij annulering: bekijk de bijbehorende GitHub Actions-run, herstart de geannuleerde
+publicatiestap en voer deze controle opnieuw uit. Rapporteer de publicatie pas als
+geslaagd na exitcode 0. Start geen inrichting op een pc alleen om publicatie te testen.
+
 Microsoft:
 [PowerShell installeren](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows),
 [Enable-PSRemoting](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/enable-psremoting?view=powershell-5.1),
