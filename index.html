@@ -10,9 +10,18 @@
     h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.15; margin-bottom: 12px; }
     h2 { margin-top: 36px; }
     a { color: #14634f; }
-    .button { display: inline-block; padding: 12px 20px; border-radius: 8px; background: #14634f; color: white; text-decoration: none; font-weight: 650; }
-    pre { overflow-x: auto; padding: 18px; border: 1px solid #d5dfd8; border-radius: 8px; background: white; font-size: .9rem; }
+    pre { padding: 18px; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     code { font-family: Consolas, monospace; }
+    .command-row { display: flex; align-items: flex-start; border: 1px solid #d5dfd8; border-radius: 8px; background: white; }
+    .command-row pre { flex: 1; min-width: 0; margin: 0; border: 0; background: transparent; }
+    .copy-button { display: grid; place-items: center; flex: 0 0 44px; height: 44px; margin: 8px; padding: 0; border: 1px solid #d5dfd8; border-radius: 6px; color: #14634f; background: #f3f6f3; cursor: pointer; }
+    .copy-button:hover { background: #e3eee6; border-color: #14634f; }
+    .copy-button:focus-visible { outline: 2px solid #14634f; outline-offset: 2px; }
+    .copy-status { min-height: 1.5em; margin: 4px 0 0; font-size: .875rem; }
+    .app-list { list-style: none; padding: 0; margin: 12px 0 0; }
+    .app-list li { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 5px 0; border-bottom: 1px solid #e1e8e2; }
+    .app-list img { flex: 0 0 28px; width: 28px; height: 28px; object-fit: contain; }
+    .app-list small { color: #526b62; }
     footer { margin-top: 44px; border-top: 1px solid #d5dfd8; padding-top: 18px; }
   </style>
 </head>
@@ -20,14 +29,54 @@
   <main>
     <h1>Jinda Operations</h1>
     <p>Windows 11 Pro inrichten: <strong>16 apps</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
-    <details><summary>Welke apps?</summary><p>Chrome, TeamViewer, PowerShell 7 (nieuwste stabiele versie), VS Code, OneNote, Notepad++, Discord, Reolink Client, Paint.NET, LastPass, Git Bash, Zoom, Teams, WhatsApp, VLC en Yodeck Player.</p></details>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Init regelt de rest.</p>
-    <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
+    <div class="command-row">
+      <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
+      <button class="copy-button" id="copy-command" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="8" y="8" width="13" height="13" rx="2"></rect>
+          <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+    </div>
+    <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
     <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
-    <p><strong>Herstart Windows na afloop.</strong> De taal geldt voor het systeem, nieuwe gebruikers en het uitvoerende account. Andere bestaande accounts behouden hun voorkeur. Datum- en getalnotatie blijven behouden.</p>
-    <p>Yodeck koppel je na installatie zelf aan je account. Sommige apps installeren alleen voor het uitvoerende account.</p>
-    <p>Start via <a href="init.ps1">init.ps1</a>; twee vaste scripts voor <a href="install-software.ps1">installatie</a> en <a href="set-windows-english.ps1">configuratie</a>. Gebruik <code>-Keyboard US</code> voor een normaal US-toetsenbord.</p>
+    <h2>Apps</h2>
+    <ul class="app-list">
+      <li><img src="assets/icons/chrome.png" alt="" width="28" height="28"><span>Google Chrome</span></li>
+      <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer</span></li>
+      <li><img src="assets/icons/powershell.png" alt="" width="28" height="28"><span>PowerShell 7 <small>(nieuwste stabiele versie)</small></span></li>
+      <li><img src="assets/icons/vscode.png" alt="" width="28" height="28"><span>Visual Studio Code</span></li>
+      <li><img src="assets/icons/onenote.png" alt="" width="28" height="28"><span>OneNote</span></li>
+      <li><img src="assets/icons/notepadplusplus.ico" alt="" width="28" height="28"><span>Notepad++</span></li>
+      <li><img src="assets/icons/discord.png" alt="" width="28" height="28"><span>Discord</span></li>
+      <li><img src="assets/icons/reolink.png" alt="" width="28" height="28"><span>Reolink Client</span></li>
+      <li><img src="assets/icons/paintnet.png" alt="" width="28" height="28"><span>Paint.NET</span></li>
+      <li><img src="assets/icons/lastpass.ico" alt="" width="28" height="28"><span>LastPass</span></li>
+      <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>
+      <li><img src="assets/icons/zoom.ico" alt="" width="28" height="28"><span>Zoom</span></li>
+      <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams</span></li>
+      <li><img src="assets/icons/whatsapp.webp" alt="" width="28" height="28"><span>WhatsApp</span></li>
+      <li><img src="assets/icons/vlc.png" alt="" width="28" height="28"><span>VLC</span></li>
+      <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
+    </ul>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
+  <script>
+    const copyButton = document.getElementById('copy-command');
+    const copyStatus = document.getElementById('copy-status');
+    copyButton.addEventListener('click', async () => {
+      copyButton.disabled = true;
+      copyStatus.textContent = '';
+      try {
+        await navigator.clipboard.writeText(document.getElementById('init-code').textContent);
+        copyStatus.textContent = 'Gekopieerd!';
+      } catch {
+        copyStatus.textContent = 'Kopiëren lukt niet. Selecteer de opdracht en druk op Ctrl+C.';
+      } finally {
+        copyButton.disabled = false;
+      }
+    });
+  </script>
 </body>
 </html>

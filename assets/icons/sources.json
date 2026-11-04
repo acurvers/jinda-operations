@@ -1,0 +1,70 @@
+{
+  "retrieved": "2026-11-04",
+  "description": "Original app icons and favicons from the official product websites or repositories.",
+  "icons": [
+    {
+      "Url": "https://www.google.com/chrome/static/images/favicons/favicon-96x96.png",
+      "File": "chrome.png"
+    },
+    {
+      "Url": "https://www.teamviewer.com/assets/favicon.png",
+      "File": "teamviewer.webp"
+    },
+    {
+      "Url": "https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_64.png",
+      "File": "powershell.png"
+    },
+    {
+      "Url": "https://code.visualstudio.com/assets/apple-touch-icon.png",
+      "File": "vscode.png"
+    },
+    {
+      "Url": "https://res.cdn.office.net/files/fabric-cdn-prod_20251117.001/assets/brand-icons/product/png/onenote_32x2.png",
+      "File": "onenote.png"
+    },
+    {
+      "Url": "https://notepad-plus-plus.org/favicon.ico",
+      "File": "notepadplusplus.ico"
+    },
+    {
+      "Url": "https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/62fddf0fde45a8baedcc7ee5_847541504914fd33810e70a0ea73177e%20(2)-1.png",
+      "File": "discord.png"
+    },
+    {
+      "Url": "https://home-cdn.reolink.us/wp-content/assets/favicon.png",
+      "File": "reolink.png"
+    },
+    {
+      "Url": "https://www.getpaint.net/favicon-32.png",
+      "File": "paintnet.png"
+    },
+    {
+      "Url": "https://www.lastpass.com/-/media/43c6c6862a08410a8ef34ab46a3a750b.ico",
+      "File": "lastpass.ico"
+    },
+    {
+      "Url": "https://git-scm.com/favicon.ico",
+      "File": "git.ico"
+    },
+    {
+      "Url": "https://st1.zoom.us/homepage/20261102-1032/primary/dist/assets/images/zoom.ico",
+      "File": "zoom.ico"
+    },
+    {
+      "Url": "https://teams.public.onecdn.static.microsoft/evergreen-assets/icons/microsoft_teams_logo_refresh_v2025.ico",
+      "File": "teams.ico"
+    },
+    {
+      "Url": "https://static.whatsapp.net/rsrc.php/yd/r/PfkSLByWV8O.webp",
+      "File": "whatsapp.webp"
+    },
+    {
+      "Url": "https://images.videolan.org/images/favicon-192.png",
+      "File": "vlc.png"
+    },
+    {
+      "Url": "https://www.yodeck.com/wp-content/uploads/2024/08/cropped-Favicon-32x32.png",
+      "File": "yodeck.webp"
+    }
+  ]
+}
