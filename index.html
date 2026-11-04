@@ -28,8 +28,8 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>Windows 11 Pro inrichten: <strong>16 apps</strong> installeren, daarna Windows standaard naar <strong>Engels (VS) met US-International</strong>.</p>
-    <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Init regelt de rest.</p>
+    <p>Windows 11 Pro inrichten: optioneel <strong>16 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
+    <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Kies aan het begin <strong>apps installeren, Remote Desktop en WinRM: y/n</strong> (zo nodig ook het LAN). Daarna loopt alles zonder verdere vragen door.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
@@ -51,7 +51,7 @@
       </button>
     </div>
     <p class="copy-status" id="copy-repair-status" role="status" aria-live="polite"></p>
-    <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
+    <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. De Windows-configuratie gebruikt intern Windows PowerShell 5.1.</p>
     <h2>Apps</h2>
     <ul class="app-list">
       <li><img src="assets/icons/chrome.png" alt="" width="28" height="28"><span>Google Chrome</span></li>

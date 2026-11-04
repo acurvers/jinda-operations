@@ -73,6 +73,8 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Mock Get-JindaWindowsPowerShell { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
         Mock Invoke-JindaChildProcess { 0 }
         Mock Set-JindaWindowsEnglish {}
+        Mock Get-LanRemoteAccessPlan { [pscustomobject]@{ Address='10.20.30.40'; Subnet='10.20.30.0/24' } }
+        Mock Invoke-LanRemoteAccessSetup {}
     }
 
     It 'selects the highest installed version numerically rather than the first PATH entry' {
@@ -102,6 +104,21 @@ Describe 'Runtime discovery and Windows language compatibility' {
                 $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'USInternational'
             }
         }
+        Assert-MockCalled Get-LanRemoteAccessPlan -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-LanRemoteAccessSetup -Times 0 -Exactly -Scope It
+    }
+
+    It 'preserves remote choices when delegating to the noninteractive Windows worker' {
+        Invoke-JindaConfiguration -ScriptPath 'C:\config.ps1' -Keyboard US -EnableRemoteDesktop -EnableWinRM -LanIPAddress '10.20.30.40' | Should Be 0
+        if ($PSVersionTable.PSEdition -eq 'Desktop') {
+            Assert-MockCalled Get-LanRemoteAccessPlan -Times 1 -Exactly -Scope It -ParameterFilter { $EnableRemoteDesktop -and $EnableWinRM -and $Address -eq '10.20.30.40' }
+            Assert-MockCalled Invoke-LanRemoteAccessSetup -Times 1 -Exactly -Scope It
+        } else {
+            Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
+                $NonInteractive -and -not $Elevate -and $ScriptArguments -contains '-EnableRemoteDesktop' -and
+                $ScriptArguments -contains '-EnableWinRM' -and $ScriptArguments -contains '10.20.30.40'
+            }
+        }
     }
 }
 
@@ -118,6 +135,11 @@ Describe 'Starting an elevated child safely' {
             $ArgumentList -like '*"C:\Test Folder\Alex''s config.ps1"*' -and
             $ArgumentList -like '*"-Keyboard" "USInternational" "-RuntimeReady"*'
         }
+    }
+
+    It 'places NonInteractive before File so it is a host option' {
+        Invoke-JindaChildProcess -Executable 'C:\pwsh.exe' -ScriptPath 'C:\config.ps1' -Elevate -NonInteractive | Should Be 3010
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter { $ArgumentList -like '*"-NonInteractive" "-File" "C:\config.ps1"*' }
     }
 
     It 'reports rejected UAC and never starts a second process' {

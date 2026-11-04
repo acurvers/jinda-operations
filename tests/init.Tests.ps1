@@ -5,6 +5,10 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initEvents = New-Object 'System.Collections.Generic.List[string]'
         $script:initLaunches = New-Object 'System.Collections.Generic.List[object]'
         $script:initExitCodes = @(0, 0)
+        Mock Get-JindaSetupOptions {
+            $script:initEvents.Add('choices')
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; LanIPAddress = '' }
+        }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
         Mock Invoke-WebRequest { $script:initEvents.Add("download:$Uri") }
@@ -14,21 +18,25 @@ Describe 'Initialization orchestrates the two existing scripts' {
         }
         Mock Invoke-JindaChildProcess {
             $script:initEvents.Add("run:$ScriptPath")
-            $script:initLaunches.Add([pscustomobject]@{ Executable=$Executable; Path=$ScriptPath; Arguments=$ScriptArguments; Elevate=$Elevate })
+            $script:initLaunches.Add([pscustomobject]@{ Executable=$Executable; Path=$ScriptPath; Arguments=$ScriptArguments; Elevate=$Elevate; NonInteractive=$NonInteractive })
             $script:initExitCodes[$script:initLaunches.Count - 1]
         }
     }
 
     It 'downloads both scripts before installing and reselects PowerShell for configuration' {
         Invoke-JindaInitialization | Should Be 0
-        $script:initEvents[0] | Should Match '^download:.*install-software.ps1$'
-        $script:initEvents[1] | Should Match '^download:.*set-windows-english.ps1$'
-        $script:initEvents[2] | Should Match '^run:.*install-software.ps1$'
-        $script:initEvents[3] | Should Match '^run:.*set-windows-english.ps1$'
+        $script:initEvents[0] | Should Be 'choices'
+        $script:initEvents[1] | Should Match '^download:.*install-software.ps1$'
+        $script:initEvents[2] | Should Match '^download:.*set-windows-english.ps1$'
+        $script:initEvents[3] | Should Match '^run:.*install-software.ps1$'
+        $script:initEvents[4] | Should Match '^run:.*set-windows-english.ps1$'
         $script:initLaunches[0].Executable | Should Match 'WindowsPowerShell'
         $script:initLaunches[1].Executable | Should Be 'C:\Program Files\PowerShell\7\pwsh.exe'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
-        foreach ($launch in $script:initLaunches) { [bool]$launch.Elevate | Should Be $false }
+        foreach ($launch in $script:initLaunches) {
+            [bool]$launch.Elevate | Should Be $false
+            [bool]$launch.NonInteractive | Should Be $true
+        }
     }
 
     It 'passes the optional normal US keyboard to configuration' {
@@ -43,11 +51,12 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'repairs after both downloads and before starting either child script' {
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
-        $script:initEvents[0] | Should Match '^download:.*install-software.ps1$'
-        $script:initEvents[1] | Should Match '^download:.*set-windows-english.ps1$'
-        $script:initEvents[2] | Should Be 'repair'
-        $script:initEvents[3] | Should Match '^run:.*install-software.ps1$'
-        $script:initEvents[4] | Should Match '^run:.*set-windows-english.ps1$'
+        $script:initEvents[0] | Should Be 'choices'
+        $script:initEvents[1] | Should Match '^download:.*install-software.ps1$'
+        $script:initEvents[2] | Should Match '^download:.*set-windows-english.ps1$'
+        $script:initEvents[3] | Should Be 'repair'
+        $script:initEvents[4] | Should Match '^run:.*install-software.ps1$'
+        $script:initEvents[5] | Should Match '^run:.*set-windows-english.ps1$'
         Assert-MockCalled Repair-JindaWinGet -Times 1 -Exactly -Scope It
     }
 
@@ -75,7 +84,10 @@ Describe 'Initialization orchestrates the two existing scripts' {
     }
 
     It 'never installs when downloading either script fails' {
-        Mock Invoke-WebRequest { throw 'Download failed' } -ParameterFilter { $Uri -like '*/set-windows-english.ps1' }
+        Mock Invoke-WebRequest {
+            if ($Uri -like '*/set-windows-english.ps1') { throw 'Download failed' }
+            $script:initEvents.Add("download:$Uri")
+        }
         { Invoke-JindaInitialization } | Should Throw 'Download failed'
         $script:initLaunches.Count | Should Be 0
     }
@@ -86,6 +98,36 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-JindaSetupOptions -Times 0 -Exactly -Scope It
+    }
+
+    It 'skips the installer download, execution and repair when apps are declined' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $true; PowerShellRemoting = $false; LanIPAddress = '10.20.30.40' }
+        }
+        Invoke-JindaInitialization -RepairWinGet | Should Be 0
+        $script:initLaunches.Count | Should Be 1
+        $script:initLaunches[0].Path | Should Match 'set-windows-english.ps1$'
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -LanIPAddress 10.20.30.40'
+        [bool]$script:initLaunches[0].NonInteractive | Should Be $true
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It -ParameterFilter { $Uri -like '*/install-software.ps1' }
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+    }
+
+    It 'passes both remote choices and the selected LAN to configuration' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $true; PowerShellRemoting = $true; LanIPAddress = '10.20.30.40' }
+        }
+        Invoke-JindaInitialization | Should Be 0
+        ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -EnableWinRM -LanIPAddress 10.20.30.40'
+    }
+
+    It 'does not download or start anything when initial choices cannot be resolved' {
+        Mock Get-JindaSetupOptions { throw 'No LAN available' }
+        { Invoke-JindaInitialization } | Should Throw 'No LAN available'
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
+        $script:initLaunches.Count | Should Be 0
     }
 }
 
@@ -112,10 +154,16 @@ Describe 'Initialization entry point forwards the repair switch' {
         Mock Test-JindaAdministrator { $false }
         $RepairWinGet = $true
         $Keyboard = 'US'
+        $InstallApps = 'No'
+        $RemoteDesktop = 'Yes'
+        $PowerShellRemoting = 'No'
+        $LanIPAddress = '10.20.30.40'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
             $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
-            $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US'
+            $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
+            ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
+            $ScriptArguments -contains '10.20.30.40'
         }
         Assert-MockCalled Invoke-JindaInitialization -Times 0 -Exactly -Scope It
     }

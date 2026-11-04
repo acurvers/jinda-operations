@@ -6,7 +6,7 @@ Twee vaste scripts voor Windows 11 Pro. Nieuwe software voegen we toe aan
 
 De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat de
 eenregelige startopdracht voor [init.ps1](init.ps1). Init downloadt en start
-de installatie en configuratie achter elkaar; de inhoud blijft in de twee vaste scripts.
+de gekozen installatie en configuratie achter elkaar; de inhoud blijft in de twee vaste scripts.
 
 ## Starten
 
@@ -18,6 +18,30 @@ De download moet slagen voordat init start. De startopdracht voert de scripts
 direct uit. Voeg voor een normaal US-toetsenbord -Keyboard US toe na -File $p,
 voor de afsluitende accolade; standaard kiest init US-International.
 
+## Keuzes vooraf
+
+Na de eventuele UAC-vraag stelt init alle vragen voordat downloads of wijzigingen beginnen:
+
+**Keuzes bij de start**
+
+| Vraag | Enter kiest | Bij nee |
+| --- | --- | --- |
+| Apps downloaden en installeren? | Ja | Geen installatiescript downloaden/starten en geen WinGet-herstel |
+| Remote Desktop (RDP) inschakelen op het LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
+| PowerShell-remoting (WinRM) inschakelen op het LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
+
+Bij een remote-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
+dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
+Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vragen.
+De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
+
+Voor vooraf ingevulde keuzes kun je `-InstallApps Yes|No`, `-RemoteDesktop Yes|No`,
+`-PowerShellRemoting Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
+init meegeven. Zonder deze parameters gebruikt init `Ask`. Gebruik bij meerdere
+netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
+
+## Optioneel WinGet-herstel
+
 Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
 `-RepairWinGet` na `-File $p`:
 
@@ -28,7 +52,7 @@ Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
 Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGallery
 voor het uitvoerende account en voert `Repair-WinGetPackageManager -Force -Latest`
 uit. In Windows PowerShell 5.1 wordt zo nodig eerst de NuGet-provider toegevoegd.
-Na het downloaden van beide scripts herstelt init WinGet en controleert met
+Als apps installeren is gekozen, herstelt init na het downloaden van beide scripts WinGet en controleert met
 `winget show` of TeamViewer via de winget-bron gevonden wordt. Pas daarna beginnen
 installatie en configuratie; bij een herstel- of bronfout stopt init.
 Zonder de switch wordt geen herstel uitgevoerd. Ook met de switch doet `-WhatIf`
@@ -47,14 +71,14 @@ De installatie voegt de nieuwste stabiele PowerShell toe. Het configuratiescript
 zoekt daarna opnieuw naar de nieuwste aanwezige versie. Er wordt geen
 uitvoeringsbeleid permanent gewijzigd.
 
-De taalcmdlets gebruiken intern een verhoogd Windows PowerShell 5.1-proces
+De taal- en LAN-configuratie gebruiken intern een verhoogd Windows PowerShell 5.1-proces
 van hetzelfde configuratiebestand. Zo blijven de getypeerde Windows-taalobjecten
 beschikbaar zonder deserialisatie via de PowerShell-compatibiliteitslaag.
 Er is geen extra configuratiescript nodig.
 
 Init vraagt eenmaal om beheerrechten; de twee deelscripts erven die rechten.
 Start je al in een administratorvenster, dan volgt geen extra UAC-vraag.
-Init downloadt eerst beide scripts en voert ze daarna een voor een uit.
+Init downloadt eerst de benodigde scripts en voert ze daarna een voor een uit.
 Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
 Alleen een fout bij Google Chrome geeft een waarschuwing en laat de overige apps
 en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een andere
@@ -132,6 +156,28 @@ een toegestane weergavetaal worden geweigerd.
 Al uitgevoerde stappen worden bij een fout niet teruggedraaid. Na het
 oplossen van de fout kun je het betreffende script opnieuw uitvoeren.
 
+## Optionele toegang op afstand via het LAN
+
+De werking van `Enable-LanRemoteAccess.ps1` is opgenomen in het bestaande
+configuratiescript. RDP en WinRM zijn afzonderlijk te kiezen; zonder toestemming
+voor dat onderdeel worden de bijbehorende services, instellingen en firewallregels
+niet aangepast.
+
+- RDP: NLA aan, bestaande RDP-poort behouden, TCP en UDP; TermService wordt niet herstart.
+- WinRM: Windows PowerShell-remoting op HTTP/TCP 5985, Windows-authenticatie;
+  Basic en onversleutelde berichten blijven uit.
+- Alleen Windows-standaardregels voor de gekozen onderdelen worden begrensd tot
+  het gekozen lokale IPv4-adres, de interface en het werkelijke LAN-subnet.
+- Het netwerkprofiel, accounts, wachtwoorden, TrustedHosts en routerinstellingen
+  blijven ongewijzigd. Andere custom firewallregels blijven ongemoeid en kunnen
+  de uiteindelijke toegang beinvloeden.
+
+Het script controleert het actuele adres, de Windows-editie, firewall en blokkerend
+beleid voordat de Windows-configuratie wijzigt. De instellingen blijven na herstart
+bestaan. Bij een later gewijzigd IP-adres moet de begrenzing opnieuw worden ingesteld.
+Een echte RDP-/WinRM-aanmelding moet vanaf de beheer-pc worden gecontroleerd.
+WinRM-clientinstellingen zijn een afzonderlijke stap.
+
 ## Fouten en controle
 
 De uitvoer vermeldt het logbestand, onder %LOCALAPPDATA%\JindaOperations\Logs
@@ -148,8 +194,9 @@ Optioneel ondersteunt elk script -WhatIf: dan geen UAC, downloads,
 software-installatie, logaanmaak of wijzigingen. Het webvoorbeeld voert
 de scripts echt uit, zonder proefrun.
 
-Tests simuleren WinGet, de Yodeck-installer en handtekeningcontrole, beheerrechten, herstarten onder een andere runtime en
-Windows-instellingen. Ze installeren geen software en veranderen geen taal.
+Tests simuleren de beginvragen, WinGet, de Yodeck-installer en handtekeningcontrole,
+beheerrechten, runtimewissels, Windows-instellingen en LAN/firewall/services.
+Ze installeren geen software en veranderen geen taal of remote-toegang.
 Voer vanuit deze map in Windows PowerShell 5.1 uit:
 
 ~~~powershell
@@ -166,6 +213,9 @@ de gepubliceerde versie. Er zijn geen losse scripts per programma of instelling.
 
 Microsoft:
 [PowerShell installeren](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows),
+[Enable-PSRemoting](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/enable-psremoting?view=powershell-5.1),
+[Firewallregels begrenzen](https://learn.microsoft.com/en-us/powershell/module/netsecurity/set-netfirewallrule),
+[Remote Desktop en NLA](https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/remotepc/remote-desktop-allow-access),
 [Windows PowerShell-compatibiliteit](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_windows_powershell_compatibility),
 [Install-Language](https://learn.microsoft.com/en-us/powershell/module/languagepackmanagement/install-language),
 [Copy-UserInternationalSettingsToSystem](https://learn.microsoft.com/en-us/powershell/module/international/copy-userinternationalsettingstosystem).

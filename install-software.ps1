@@ -84,9 +84,12 @@ function Invoke-JindaChildProcess {
         [string]$Executable,
         [string]$ScriptPath,
         [string[]]$ScriptArguments = @(),
-        [switch]$Elevate
+        [switch]$Elevate,
+        [switch]$NonInteractive
     )
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath) + $ScriptArguments
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
+    if ($NonInteractive) { $arguments += '-NonInteractive' }
+    $arguments += @('-File', $ScriptPath) + $ScriptArguments
     if ($Elevate) {
         # Start-Process joins its arguments, so explicitly quote paths and values.
         if (@($arguments | Where-Object { $_ -match '["\r\n]' }).Count) {
@@ -169,6 +172,7 @@ function Install-JindaYodeck {
     param()
 
     $ErrorActionPreference = 'Stop'
+    Write-Host ''
     if (-not $PSCmdlet.ShouldProcess('Yodeck Player', 'Downloaden bij Yodeck en installeren')) { return $false }
     if (Test-JindaYodeckInstalled) {
         Write-Host 'Yodeck Player is al aanwezig; overgeslagen.'
@@ -236,6 +240,7 @@ function Install-JindaSoftware {
     )
     $restartNeeded = $false
     foreach ($package in $packages) {
+        Write-Host ''
         if (-not $PSCmdlet.ShouldProcess($package.Name, 'Installeren via WinGet')) {
             continue
         }

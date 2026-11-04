@@ -1,21 +1,34 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Start de volledige Jinda-inrichting: eerst software, daarna Windows-configuratie.
+Start de Jinda-inrichting: keuzes vooraf, optioneel software, daarna Windows-configuratie.
 .DESCRIPTION
-Vraagt zo nodig eenmaal administratorrechten. Downloadt beide vaste scripts
-voordat iets wordt uitgevoerd en kiest opnieuw PowerShell na de software-installatie.
+Vraagt zo nodig eenmaal administratorrechten en verzamelt alle keuzes vooraf.
+Downloadt de benodigde vaste scripts voordat iets wordt uitgevoerd en kiest
+opnieuw PowerShell na de optionele software-installatie.
 .PARAMETER Keyboard
 USInternational (standaard) of US.
 .PARAMETER RepairWinGet
 Herstelt WinGet met Microsoft.WinGet.Client en controleert de winget-bron
 voordat de software-installatie begint. Alleen actief als deze switch is opgegeven.
+.PARAMETER InstallApps
+Ask (standaard), Yes of No. Vraagt aan het begin of apps moeten worden geinstalleerd.
+.PARAMETER RemoteDesktop
+Ask (standaard), Yes of No. Remote Desktop inschakelen voor het gekozen LAN.
+.PARAMETER PowerShellRemoting
+Ask (standaard), Yes of No. Windows PowerShell-remoting (WinRM) inschakelen op het LAN.
+.PARAMETER LanIPAddress
+Optioneel actief IPv4-adres van de doel-pc. Zonder dit adres wordt het LAN aan het begin gekozen.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [ValidateSet('US', 'USInternational')]
     [string]$Keyboard = 'USInternational',
     [switch]$RepairWinGet,
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallApps = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
+    [string]$LanIPAddress,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -90,9 +103,12 @@ function Invoke-JindaChildProcess {
         [string]$Executable,
         [string]$ScriptPath,
         [string[]]$ScriptArguments = @(),
-        [switch]$Elevate
+        [switch]$Elevate,
+        [switch]$NonInteractive
     )
-    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath) + $ScriptArguments
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass')
+    if ($NonInteractive) { $arguments += '-NonInteractive' }
+    $arguments += @('-File', $ScriptPath) + $ScriptArguments
     if ($Elevate) {
         # Start-Process joins its arguments, so explicitly quote paths and values.
         if (@($arguments | Where-Object { $_ -match '["\r\n]' }).Count) {
@@ -189,35 +205,115 @@ function Repair-JindaWinGet {
     Write-Host 'WinGet-herstel en broncontrole geslaagd.'
 }
 
+function Read-JindaYesNo {
+    param(
+        [string]$Prompt,
+        [ValidateSet('Ask', 'Yes', 'No')][string]$Choice = 'Ask',
+        [bool]$Default = $false
+    )
+    if ($Choice -ne 'Ask') { return ($Choice -eq 'Yes') }
+    $hint = if ($Default) { '[Y/n]' } else { '[y/N]' }
+    while ($true) {
+        $answer = ([string](Read-Host "$Prompt $hint")).Trim().ToLowerInvariant()
+        if ($answer -eq '') { return $Default }
+        if ($answer -in @('y', 'yes', 'j', 'ja')) { return $true }
+        if ($answer -in @('n', 'no', 'nee')) { return $false }
+        Write-Host 'Antwoord met y of n.'
+    }
+}
+
+function Select-JindaLanAddress {
+    param([string]$Address)
+    $candidates = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+        Where-Object {
+            $_.AddressState -eq 'Preferred' -and $_.PrefixLength -ge 1 -and $_.PrefixLength -le 30 -and
+            $_.IPAddress -notmatch '^(127\.|169\.254\.|0\.)'
+        } | Sort-Object InterfaceIndex, IPAddress)
+    if ($Address) {
+        $parsed = [Net.IPAddress]::Parse($Address)
+        if ($parsed.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'Kies een IPv4-LAN-adres.' }
+        $selected = @($candidates | Where-Object IPAddress -eq $parsed.IPAddressToString)
+        if ($selected.Count -ne 1) { throw "LAN-adres $Address is niet eenduidig actief op deze pc." }
+    }
+    elseif ($candidates.Count -eq 0) { throw 'Geen actief IPv4-LAN gevonden. Er wordt nog niets geinstalleerd of ingesteld.' }
+    elseif ($candidates.Count -eq 1) { $selected = @($candidates[0]) }
+    else {
+        Write-Host 'Kies het LAN waarop Remote Desktop/WinRM bereikbaar mag zijn:'
+        for ($i = 0; $i -lt $candidates.Count; $i++) {
+            Write-Host ('{0}: {1} - {2}/{3}' -f ($i + 1), $candidates[$i].InterfaceAlias, $candidates[$i].IPAddress, $candidates[$i].PrefixLength)
+        }
+        while ($true) {
+            $number = 0
+            $answer = Read-Host 'LAN-nummer'
+            if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $candidates.Count) {
+                $selected = @($candidates[$number - 1])
+                break
+            }
+            Write-Host 'Kies een nummer uit de lijst.'
+        }
+    }
+    Write-Host ('LAN voor toegang op afstand: {0} - {1}/{2}.' -f $selected[0].InterfaceAlias, $selected[0].IPAddress, $selected[0].PrefixLength)
+    return [string]$selected[0].IPAddress
+}
+
+function Get-JindaSetupOptions {
+    param(
+        [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
+        [string]$PowerShellRemoting = 'Ask', [string]$LanIPAddress
+    )
+    Write-Host 'Kies nu de onderdelen. Daarna loopt de inrichting zonder verdere vragen door.'
+    $apps = Read-JindaYesNo -Prompt 'Apps downloaden en installeren?' -Choice $InstallApps -Default $true
+    $rdp = Read-JindaYesNo -Prompt 'Remote Desktop (RDP) inschakelen op het LAN?' -Choice $RemoteDesktop
+    $winrm = Read-JindaYesNo -Prompt 'PowerShell-remoting (WinRM) inschakelen op het LAN?' -Choice $PowerShellRemoting
+    $address = ''
+    if ($rdp -or $winrm) { $address = Select-JindaLanAddress -Address $LanIPAddress }
+    [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; LanIPAddress = $address }
+}
+
 function Invoke-JindaInitialization {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [ValidateSet('US', 'USInternational')]
         [string]$Keyboard = 'USInternational',
-        [switch]$RepairWinGet
+        [switch]$RepairWinGet,
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallApps = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
+        [string]$LanIPAddress
     )
 
     $ErrorActionPreference = 'Stop'
     if (-not $PSCmdlet.ShouldProcess('Deze pc', 'Jinda-software installeren en Windows configureren')) { return 0 }
 
+    # Collect every choice before downloads, repair or installation. Children never prompt.
+    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
     $baseUrl = 'https://acurvers.github.io/jinda-operations'
     $folder = Join-Path $env:TEMP ('jinda-' + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $folder
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
-    Write-Host 'Installatie- en configuratiescript downloaden...'
-    Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/install-software.ps1" -OutFile $install -ErrorAction Stop
+    Write-Host 'Benodigde scripts downloaden...'
+    if ($options.InstallApps) {
+        Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/install-software.ps1" -OutFile $install -ErrorAction Stop
+    }
     Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/set-windows-english.ps1" -OutFile $config -ErrorAction Stop
 
-    if ($RepairWinGet) { Repair-JindaWinGet }
-
-    Write-Host 'Stap 1/2: software installeren.'
-    $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install
-    if ($installCode -notin @(0, 3010)) { throw "Software-installatie mislukt (exitcode $installCode). Configuratie is niet gestart." }
+    $installCode = 0
+    if ($options.InstallApps) {
+        if ($RepairWinGet) { Repair-JindaWinGet }
+        Write-Host 'Stap 1/2: software installeren.'
+        $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -NonInteractive
+        if ($installCode -notin @(0, 3010)) { throw "Software-installatie mislukt (exitcode $installCode). Configuratie is niet gestart." }
+    }
+    else { Write-Host 'Software-installatie en eventueel WinGet-herstel overgeslagen volgens je keuze.' }
 
     # PowerShell may have just been installed or upgraded; select it again.
     Write-Host 'Stap 2/2: Windows configureren.'
-    $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments @('-Keyboard', $Keyboard)
+    $configArguments = @('-Keyboard', $Keyboard)
+    if ($options.RemoteDesktop) { $configArguments += '-EnableRemoteDesktop' }
+    if ($options.PowerShellRemoting) { $configArguments += '-EnableWinRM' }
+    if ($options.LanIPAddress) { $configArguments += @('-LanIPAddress', $options.LanIPAddress) }
+    $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
     if ($configCode -ne 0) { throw "Windows-configuratie mislukt (exitcode $configCode)." }
 
     Write-Host 'Jinda-inrichting voltooid. Herstart Windows om de wijzigingen toe te passen.'
@@ -227,10 +323,11 @@ function Invoke-JindaInitialization {
 # Dot-sourcing defines functions only, for tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $scriptArguments = @('-Keyboard', $Keyboard)
+        $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting)
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
+        if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
         }
         exit $exitCode
     }
