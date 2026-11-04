@@ -2,6 +2,7 @@
 
 function Invoke-JindaFakeWinget {
     $script:wingetCalls.Add(@($args))
+    if ($script:throwChrome -and $args -contains 'Google.Chrome') { throw 'Simulated Chrome process error' }
     $global:LASTEXITCODE = $script:wingetExitCodes[$script:wingetCalls.Count - 1]
     Write-Output 'Simulated WinGet output'
 }
@@ -10,6 +11,7 @@ Describe 'All requested Jinda applications' {
     BeforeEach {
         $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetExitCodes = @(0) * 15
+        $script:throwChrome = $false
         Mock Install-JindaYodeck { $false }
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
     }
@@ -45,10 +47,47 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 15
     }
 
-    It 'stops and reports a failed package' {
-        $script:wingetExitCodes = @(1, 0, 0)
-        { Install-JindaSoftware } | Should Throw 'Google Chrome: WinGet is mislukt'
-        $script:wingetCalls.Count | Should Be 1
+    It 'warns about the reported Chrome source error and still attempts every remaining app' {
+        $script:wingetExitCodes[0] = -1978335217
+        $warnings = @()
+        Install-JindaSoftware -WarningVariable warnings | Should Be $false
+        $script:wingetCalls.Count | Should Be 15
+        ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
+        ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*verder'
+        Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
+    }
+
+    It 'also continues after a Chrome process exception' {
+        $script:throwChrome = $true
+        Install-JindaSoftware | Should Be $false
+        $script:wingetCalls.Count | Should Be 15
+        Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
+    }
+
+    It 'stops on the same source error in TeamViewer after allowing the Chrome error' {
+        $script:wingetExitCodes[0] = -1978335217
+        $script:wingetExitCodes[1] = -1978335217
+        { Install-JindaSoftware } | Should Throw 'TeamViewer: WinGet is mislukt'
+        $script:wingetCalls.Count | Should Be 2
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+    }
+
+    It 'still stops immediately for a failure in each other WinGet app' {
+        foreach ($failedIndex in 1..14) {
+            $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
+            $script:wingetExitCodes = @(0) * 15
+            $script:wingetExitCodes[$failedIndex] = 1
+            { Install-JindaSoftware } | Should Throw 'WinGet is mislukt'
+            $script:wingetCalls.Count | Should Be ($failedIndex + 1)
+        }
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+    }
+
+    It 'preserves a later restart requirement after the Chrome error' {
+        $script:wingetExitCodes[0] = 1
+        $script:wingetExitCodes[2] = 3010
+        Install-JindaSoftware | Should Be $true
+        $script:wingetCalls.Count | Should Be 15
     }
 
     It 'reports a PowerShell installation failure after the other packages succeed' {

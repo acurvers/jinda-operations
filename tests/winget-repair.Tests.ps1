@@ -9,7 +9,7 @@ function Repair-WinGetPackageManager {
 function winget.exe {
     $script:sourceArguments = @($args)
     $global:LASTEXITCODE = $script:sourceExitCode
-    'Simulated Chrome package details'
+    'Simulated TeamViewer package details'
 }
 
 Describe 'Optional WinGet repair' {
@@ -28,7 +28,7 @@ Describe 'Optional WinGet repair' {
     It 'uses the official stable repair and verifies the winget source without returning command output' {
         @(Repair-JindaWinGet).Count | Should Be 0
         ($script:repairEvents -join ',') | Should Be 'module,import,repair'
-        ($script:sourceArguments -join ' ') | Should Be 'show --id Google.Chrome --exact --source winget --accept-source-agreements --disable-interactivity'
+        ($script:sourceArguments -join ' ') | Should Be 'show --id TeamViewer.TeamViewer --exact --source winget --accept-source-agreements --disable-interactivity'
         Assert-MockCalled Install-Module -Times 1 -Exactly -Scope It -ParameterFilter {
             $Name -eq 'Microsoft.WinGet.Client' -and $Repository -eq 'PSGallery' -and $Scope -eq 'CurrentUser' -and $Force
         }

@@ -29,7 +29,7 @@ Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGalle
 voor het uitvoerende account en voert `Repair-WinGetPackageManager -Force -Latest`
 uit. In Windows PowerShell 5.1 wordt zo nodig eerst de NuGet-provider toegevoegd.
 Na het downloaden van beide scripts herstelt init WinGet en controleert met
-`winget show` of Chrome via de winget-bron gevonden wordt. Pas daarna beginnen
+`winget show` of TeamViewer via de winget-bron gevonden wordt. Pas daarna beginnen
 installatie en configuratie; bij een herstel- of bronfout stopt init.
 Zonder de switch wordt geen herstel uitgevoerd. Ook met de switch doet `-WhatIf`
 geen wijzigingen. Zie de [Microsoft-herstelinstructies](https://learn.microsoft.com/en-us/windows/package-manager/winget/troubleshooting).
@@ -56,7 +56,9 @@ Init vraagt eenmaal om beheerrechten; de twee deelscripts erven die rechten.
 Start je al in een administratorvenster, dan volgt geen extra UAC-vraag.
 Init downloadt eerst beide scripts en voert ze daarna een voor een uit.
 Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
-Bij een installatiefout start de configuratie niet. Een software-exitcode
+Alleen een fout bij Google Chrome geeft een waarschuwing en laat de overige apps
+en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een andere
+app stopt de installatie en start de configuratie niet. Een software-exitcode
 3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
 doorgegeven. Init start Windows niet zelf opnieuw op.
 
@@ -138,7 +140,9 @@ en de plek in het script. Bij een UAC-fout verschijnt de melding in het
 oorspronkelijke venster, voordat een log kan worden gestart.
 
 Exitcodes: 0 geslaagd, 1 fout, 3010 software geinstalleerd maar herstart nodig.
-Init gaat bij 3010 door met configureren en stopt bij overige fouten.
+Init gaat bij 3010 door met configureren en stopt bij overige fouten, behalve de
+Chrome-fout die het installatiescript als waarschuwing behandelt. Een algemene
+WinGet-bronfout kan ook de volgende app laten mislukken; dan stopt de installatie.
 
 Optioneel ondersteunt elk script -WhatIf: dan geen UAC, downloads,
 software-installatie, logaanmaak of wijzigingen. Het webvoorbeeld voert

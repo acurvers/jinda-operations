@@ -177,10 +177,11 @@ function Repair-JindaWinGet {
     Import-Module -Name Microsoft.WinGet.Client -Force -ErrorAction Stop
     Repair-WinGetPackageManager -Force -Latest -Verbose -ErrorAction Stop | Out-Host
 
-    Write-Host 'WinGet-bron controleren met Google Chrome...'
+    # Probe a required app: Chrome installation errors are allowed to continue.
+    Write-Host 'WinGet-bron controleren met TeamViewer...'
     $winget = (Get-Command winget.exe -CommandType Application -ErrorAction Stop).Source
     $PSNativeCommandUseErrorActionPreference = $false
-    & $winget show --id Google.Chrome --exact --source winget --accept-source-agreements --disable-interactivity | Out-Host
+    & $winget show --id TeamViewer.TeamViewer --exact --source winget --accept-source-agreements --disable-interactivity | Out-Host
     $sourceCode = $LASTEXITCODE
     if ($sourceCode -ne 0) {
         throw "WinGet-bron blijft onbruikbaar na herstel (exitcode $sourceCode). Installatie en configuratie zijn niet gestart."

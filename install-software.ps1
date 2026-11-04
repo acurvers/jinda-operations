@@ -7,6 +7,8 @@ Installeert waar ondersteund voor alle gebruikers. Bestaande app-installaties
 worden overgeslagen; een oudere PowerShell 7 wordt bijgewerkt.
 Vraagt automatisch beheerrechten en kiest de nieuwste aanwezige stabiele PowerShell 7+.
 De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
+Bij een Chrome-fout gaat de installatie verder met een waarschuwing.
+Fouten bij alle andere apps stoppen de installatie.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param([Parameter(DontShow = $true)][switch]$RuntimeReady)
@@ -244,15 +246,21 @@ function Install-JindaSoftware {
         ) + $package.Extra
         if ($package.Scope) { $wingetArguments += @('--scope', $package.Scope) }
         Write-Host "$($package.Name) installeren via WinGet..."
-        & $winget.Source @wingetArguments | Out-Host
-        $wingetExitCode = $LASTEXITCODE
-        $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
-        switch ($exitCodeHex) {
-            '00000000' { Write-Host "$($package.Name) is beschikbaar." }
-            '8A15002B' { Write-Host "$($package.Name) is al aanwezig; overgeslagen." }
-            '8A150061' { Write-Host "$($package.Name) is al geinstalleerd; overgeslagen." }
-            '00000BC2' { $restartNeeded = $true }
-            default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
+        try {
+            & $winget.Source @wingetArguments | Out-Host
+            $wingetExitCode = $LASTEXITCODE
+            $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
+            switch ($exitCodeHex) {
+                '00000000' { Write-Host "$($package.Name) is beschikbaar." }
+                '8A15002B' { Write-Host "$($package.Name) is al aanwezig; overgeslagen." }
+                '8A150061' { Write-Host "$($package.Name) is al geinstalleerd; overgeslagen." }
+                '00000BC2' { $restartNeeded = $true }
+                default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
+            }
+        }
+        catch {
+            if ($package.Id -ne 'Google.Chrome') { throw }
+            Write-Warning "Google Chrome is niet succesvol afgerond: $($_.Exception.Message) De installatie gaat verder met de overige apps."
         }
     }
     if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
