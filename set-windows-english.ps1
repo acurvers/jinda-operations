@@ -412,8 +412,17 @@ function Invoke-LanRemoteAccessSetup {
                 -Protocol TCP -LocalPort $Plan.WinRMPort -ErrorAction Stop
         }
         # Keep Windows authentication and encrypted WinRM messages, including over HTTP.
-        Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false -ErrorAction Stop
-        Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $false -ErrorAction Stop
+        # Use direct WSMan requests rather than the WSMan: provider, which failed
+        # with a Public-network error after successful remoting setup on a client PC.
+        Set-WSManInstance -ResourceURI 'winrm/config/service' `
+            -ValueSet @{ AllowUnencrypted = 'false' } -ErrorAction Stop | Out-Null
+        Set-WSManInstance -ResourceURI 'winrm/config/service/auth' `
+            -ValueSet @{ Basic = 'false' } -ErrorAction Stop | Out-Null
+        $serviceSettings = Get-WSManInstance -ResourceURI 'winrm/config/service' -ErrorAction Stop
+        $authSettings = Get-WSManInstance -ResourceURI 'winrm/config/service/auth' -ErrorAction Stop
+        if ([string]$serviceSettings.AllowUnencrypted -ine 'false' -or [string]$authSettings.Basic -ine 'false') {
+            throw 'WinRM security verification failed: AllowUnencrypted and Basic must both be disabled.'
+        }
         Test-WSMan -ComputerName localhost -ErrorAction Stop | Out-Null
     }
     # Enable the scoped RDP rules before touching the listener. Do not restart

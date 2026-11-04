@@ -56,6 +56,7 @@ Describe 'Preview and target validation without system changes' {
     Mock Set-Service { throw 'Unexpected mutation in preview' }
     Mock Start-Service { throw 'Unexpected mutation in preview' }
     Mock Set-Item { throw 'Unexpected mutation in preview' }
+    Mock Set-WSManInstance { throw 'Unexpected mutation in preview' }
 
     It 'previews the public-profile LAN without changing its category' {
         $plan = Get-LanRemoteAccessPlan -EnableRemoteDesktop -EnableWinRM -Address '192.168.50.200'
@@ -143,7 +144,10 @@ Describe 'Applying the plan with every mutating command mocked' {
         Mock Assert-LanRemoteAccessAdministrator {}
         Mock Enable-PSRemoting {}
         Mock Invoke-JindaPowerShell7Remoting {}
+        Mock Set-WSManInstance {}
         $script:pingRuleExists = $false
+        $script:winrmAllowUnencrypted = 'false'
+        $script:winrmBasic = 'false'
         $script:testPlan = [pscustomobject]@{
             Address = '192.168.50.200'; Subnet = '192.168.50.0/24'; InterfaceAlias = 'Ethernet'
             RemoteAddresses = @('192.168.50.0/24', '10.6.0.3')
@@ -174,7 +178,12 @@ Describe 'Applying the plan with every mutating command mocked' {
     Mock Set-Service {}
     Mock Start-Service {}
     Mock Restart-Service { throw 'Must never restart TermService' }
-    Mock Set-Item {}
+    Mock Set-Item { throw 'WinRM firewall exception will not work since one of the network connection types on this machine is set to Public.' }
+    Mock Get-WSManInstance {
+        if ($ResourceURI -eq 'winrm/config/service') { return [pscustomobject]@{ AllowUnencrypted = $script:winrmAllowUnencrypted } }
+        if ($ResourceURI -eq 'winrm/config/service/auth') { return [pscustomobject]@{ Basic = $script:winrmBasic } }
+        throw "Unexpected WSMan resource: $ResourceURI"
+    }
     Mock Test-WSMan { [pscustomobject]@{ ProductVersion = 'mock' } }
     Mock Get-Service { [pscustomobject]@{ Name = 'WinRM'; Status = 'Running'; StartType = 'Automatic' } }
     Mock Get-NetTCPConnection {
@@ -237,11 +246,28 @@ Describe 'Applying the plan with every mutating command mocked' {
         }
         Assert-MockCalled Restart-Service -Times 0 -Exactly -Scope It
     }
-    It 'requires NLA and keeps WinRM plaintext/Basic authentication disabled' {
+    It 'requires NLA and verifies disabled WinRM plaintext/Basic without using the failing WSMan provider' {
         Invoke-LanRemoteAccessSetup -Plan $script:testPlan | Out-Null
         Assert-MockCalled Set-ItemProperty -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'UserAuthentication' -and $Value -eq 1 }
-        Assert-MockCalled Set-Item -Times 1 -Exactly -Scope It -ParameterFilter { $Path -eq 'WSMan:\localhost\Service\AllowUnencrypted' -and $Value -eq $false }
-        Assert-MockCalled Set-Item -Times 1 -Exactly -Scope It -ParameterFilter { $Path -eq 'WSMan:\localhost\Service\Auth\Basic' -and $Value -eq $false }
+        Assert-MockCalled Set-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-WSManInstance -Times 1 -Exactly -Scope It -ParameterFilter { $ResourceURI -eq 'winrm/config/service' -and $ValueSet.Count -eq 1 -and $ValueSet.AllowUnencrypted -ceq 'false' -and -not $ComputerName }
+        Assert-MockCalled Set-WSManInstance -Times 1 -Exactly -Scope It -ParameterFilter { $ResourceURI -eq 'winrm/config/service/auth' -and $ValueSet.Count -eq 1 -and $ValueSet.Basic -ceq 'false' -and -not $ComputerName }
+        Assert-MockCalled Get-WSManInstance -Times 2 -Exactly -Scope It
+    }
+    It 'stops if WinRM security settings cannot be saved' {
+        Mock Set-WSManInstance { throw 'Simulated WSMan configuration write failure' }
+        { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw 'Simulated WSMan configuration write failure'
+        Assert-MockCalled Test-WSMan -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
+    }
+    It 'stops if either insecure WinRM setting remains enabled' {
+        $script:winrmAllowUnencrypted = 'true'
+        { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw 'WinRM security verification failed'
+        $script:winrmAllowUnencrypted = 'false'
+        $script:winrmBasic = 'true'
+        { Invoke-LanRemoteAccessSetup -Plan $script:testPlan } | Should Throw 'WinRM security verification failed'
+        Assert-MockCalled Test-WSMan -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
     }
     It 'restores the scope even if enabling WinRM fails' {
         Mock Enable-PSRemoting { throw 'Simulated WinRM setup failure' }
@@ -285,6 +311,8 @@ Describe 'Applying the plan with every mutating command mocked' {
         Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-JindaPowerShell7Remoting -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-WSManInstance -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-WSManInstance -Times 0 -Exactly -Scope It
         Assert-MockCalled Test-WSMan -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It -ParameterFilter { $Name -like 'WINRM-*' }
         Assert-MockCalled Start-Service -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'TermService' }
@@ -308,5 +336,7 @@ Describe 'Applying the plan with every mutating command mocked' {
         Assert-MockCalled Set-ItemProperty -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Service -Times 0 -Exactly -Scope It
         Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-WSManInstance -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-WSManInstance -Times 0 -Exactly -Scope It
     }
 }
