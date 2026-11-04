@@ -96,6 +96,30 @@ app stopt de installatie en start de configuratie niet. Een software-exitcode
 3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
 doorgegeven. Init start Windows niet zelf opnieuw op.
 
+## Browserfavorieten
+
+Het configuratiescript voegt voor alle Windows-gebruikers een beheerde map **Jinda**
+toe aan Chrome en Edge, met **Jinda Operations** als link naar de instructiepagina.
+Dit gebeurt ook als je apps installeren overslaat. Persoonlijke favorieten blijven
+ongemoeid; de beheerde link is niet handmatig te wijzigen en wordt niet gesynchroniseerd.
+Een al aanwezige link wordt niet opnieuw toegevoegd. Heeft de lokale beheerde
+favorietenlijst al een andere mapnaam, dan komt Jinda als submap daarin; bestaande
+items en mapnamen blijven behouden. Ongeldige bestaande policydata worden niet overschreven.
+
+De browsers hoeven niet te worden gesloten: de link verschijnt na de volgende
+policyverversing of browserstart. De favorietenbalk wordt niet verplicht zichtbaar
+gemaakt. Controleer zo nodig `chrome://policy` of `edge://policy`.
+De instellingen zijn `ManagedBookmarks` (Chrome) en `ManagedFavorites` (Edge), als
+JSON-string onder de bijbehorende `HKLM:\SOFTWARE\Policies`-sleutel.
+Centraal browserbeheer kan andere policywaarden afdwingen of lokale instellingen
+overschrijven; dit script wijzigt geen centraal beheer of policyprioriteiten.
+
+**Edge-beperking:** de policy geldt volgens Microsoft niet voor browserprofielen
+die met een persoonlijk Microsoft-account zijn aangemeld. Dit is een beperking van
+de gekozen beheerde-favorietenmethode, niet van het Windows-account.
+Bronnen: [Chrome ManagedBookmarks](https://chromeenterprise.google/policies/#ManagedBookmarks)
+en [Edge ManagedFavorites](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/ManagedFavorites).
+
 ## Software
 
 Voor de apps werkt het installatiescript eerst WinGet zelf bij via

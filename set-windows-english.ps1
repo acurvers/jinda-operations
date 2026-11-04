@@ -10,6 +10,8 @@ Windows configuration runs internally in Windows PowerShell 5.1. Restart afterwa
 RDP and WinRM are enabled only when their individual switches are specified.
 Selected remote access and IPv4 ping allow the LAN and WireGuard client 10.6.0.3.
 These address restrictions are retained when the script is run again.
+Adds Jinda Operations as a managed bookmark in Chrome and Edge for all Windows users.
+Personal bookmarks are unchanged; Edge excludes profiles signed in with a personal Microsoft account.
 .PARAMETER Keyboard
 US (default) or USInternational. Regional date and number formats are preserved.
 .PARAMETER EnableRemoteDesktop
@@ -551,6 +553,120 @@ function Set-JindaWindowsEnglish {
 
 
 
+# BEGIN managed browser bookmarks.
+function Assert-JindaBookmarkNodes {
+    param([AllowEmptyCollection()][object[]]$Nodes, [int]$Depth = 0)
+    if ($Depth -gt 40) { throw 'The existing bookmark policy is too deeply nested; it has not been changed.' }
+    foreach ($node in $Nodes) {
+        if ($null -eq $node -or $node -isnot [pscustomobject]) { throw 'The existing bookmark policy contains an invalid entry.' }
+        $properties = $node.PSObject.Properties
+        if ($properties['toplevel_name']) {
+            if ($Depth -ne 0 -or $node.toplevel_name -isnot [string] -or @($properties).Count -ne 1) {
+                throw 'The existing bookmark policy has an invalid top-level folder name.'
+            }
+            continue
+        }
+        if (-not $properties['name'] -or $node.name -isnot [string]) { throw 'The existing bookmark policy contains an entry without a name.' }
+        if ($properties['children']) {
+            if ($properties['url'] -or $node.children -isnot [array]) { throw 'The existing bookmark policy contains an invalid folder.' }
+            Assert-JindaBookmarkNodes -Nodes $node.children -Depth ($Depth + 1)
+        }
+        elseif (-not $properties['url'] -or $node.url -isnot [string]) { throw 'The existing bookmark policy contains an entry without a URL.' }
+    }
+}
+
+function Test-JindaBookmarkUrl {
+    param([AllowEmptyCollection()][object[]]$Nodes)
+    foreach ($node in $Nodes) {
+        if ($node.PSObject.Properties['url'] -and $node.url.TrimEnd('/') -ceq 'https://acurvers.github.io/jinda-operations') { return $true }
+        if ($node.PSObject.Properties['children'] -and (Test-JindaBookmarkUrl -Nodes $node.children)) { return $true }
+    }
+    return $false
+}
+
+function Add-JindaManagedBookmarkJson {
+    param([AllowNull()][AllowEmptyString()][string]$Json)
+    $entries = @()
+    if (-not [string]::IsNullOrWhiteSpace($Json)) {
+        if (-not $Json.TrimStart().StartsWith('[')) { throw 'The existing bookmark policy must be a JSON array; it has not been changed.' }
+        # Windows PowerShell 5.1 emits the parsed array as one pipeline object.
+        try { $parsed = ConvertFrom-Json -InputObject $Json -ErrorAction Stop }
+        catch { throw "The existing bookmark policy is invalid JSON; it has not been changed. $($_.Exception.Message)" }
+        $entries = @($parsed)
+        Assert-JindaBookmarkNodes -Nodes $entries
+        if (@($entries | Where-Object { $_.PSObject.Properties['toplevel_name'] }).Count -gt 1) {
+            throw 'The existing bookmark policy has multiple top-level folder names; it has not been changed.'
+        }
+        # Preserve an existing link, including its name/location and original JSON.
+        if (Test-JindaBookmarkUrl -Nodes $entries) { return $Json }
+    }
+    $bookmark = [pscustomobject]@{ name = 'Jinda Operations'; url = 'https://acurvers.github.io/jinda-operations/' }
+    $topNames = @($entries | Where-Object { $_.PSObject.Properties['toplevel_name'] })
+    if ($entries.Count -eq 0) {
+        $entries = @([pscustomobject]@{ toplevel_name = 'Jinda' }, $bookmark)
+    }
+    elseif ($topNames.Count -eq 1 -and $topNames[0].toplevel_name -eq 'Jinda') {
+        $entries += $bookmark
+    }
+    else {
+        # Keep an existing managed folder name and put Jinda inside that folder.
+        $folders = @($entries | Where-Object { $_.PSObject.Properties['children'] -and $_.name -eq 'Jinda' })
+        if ($folders.Count -gt 0) { $folders[0].children = @($folders[0].children) + @($bookmark) }
+        else { $entries += [pscustomobject]@{ name = 'Jinda'; children = @($bookmark) } }
+    }
+    return ConvertTo-Json -InputObject $entries -Depth 100 -Compress
+}
+
+function Get-JindaBookmarkPolicyJson {
+    param([string]$Path, [string]$Name)
+    if (-not (Test-Path -LiteralPath $Path -ErrorAction Stop)) { return $null }
+    if (Test-Path -LiteralPath (Join-Path $Path $Name) -ErrorAction Stop) {
+        throw "The existing $Name policy uses registry subkeys. Merge it in its management tool; this script will not replace it."
+    }
+    $key = Get-ItemProperty -LiteralPath $Path -ErrorAction Stop
+    $property = $key.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    if ($property.Value -isnot [string]) { throw "The existing $Name policy is not a JSON string; it has not been changed." }
+    return $property.Value
+}
+
+function Set-JindaBrowserBookmarks {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+    if (-not $PSCmdlet.ShouldProcess('Chrome and Edge on this PC', 'Add the managed Jinda Operations bookmark for all Windows users')) { return }
+    if (-not (Test-JindaAdministrator) -or -not [Environment]::Is64BitProcess) {
+        throw 'Managed browser bookmarks require a 64-bit administrator PowerShell process.'
+    }
+    $policies = @(
+        [pscustomobject]@{ Browser = 'Chrome'; Path = 'HKLM:\SOFTWARE\Policies\Google\Chrome'; Name = 'ManagedBookmarks' },
+        [pscustomobject]@{ Browser = 'Edge'; Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'; Name = 'ManagedFavorites' }
+    )
+    # Validate both existing policies before writing either one. Never reset a
+    # malformed policy or touch profile Bookmarks files, user data or other policies.
+    $plans = foreach ($policy in $policies) {
+        $original = Get-JindaBookmarkPolicyJson -Path $policy.Path -Name $policy.Name
+        [pscustomobject]@{ Policy = $policy; Original = $original; Json = (Add-JindaManagedBookmarkJson -Json $original) }
+    }
+    foreach ($plan in $plans) {
+        $policy = $plan.Policy
+        if ($plan.Json -ceq $plan.Original) {
+            Write-Host "$($policy.Browser): the Jinda Operations bookmark is already configured."
+            continue
+        }
+        $current = Get-JindaBookmarkPolicyJson -Path $policy.Path -Name $policy.Name
+        if ($current -cne $plan.Original) { throw "$($policy.Browser): bookmark policy changed during setup. Run again to merge the current value." }
+        $null = New-Item -Path $policy.Path -Force -ErrorAction Stop
+        $null = New-ItemProperty -LiteralPath $policy.Path -Name $policy.Name -PropertyType String -Value $plan.Json -Force -ErrorAction Stop
+        if ((Get-JindaBookmarkPolicyJson -Path $policy.Path -Name $policy.Name) -cne $plan.Json) {
+            throw "$($policy.Browser): could not verify the saved bookmark policy."
+        }
+        Write-Host "$($policy.Browser): the managed Jinda Operations bookmark policy is configured."
+    }
+    Write-Host 'Browsers apply the bookmark on policy refresh or next start; existing windows remain open.'
+    Write-Host 'Edge does not apply this policy to profiles signed in with a personal Microsoft account.'
+}
+# END managed browser bookmarks.
+
 function Invoke-JindaConfiguration {
     param(
         [string]$ScriptPath, [string]$Keyboard,
@@ -572,6 +688,8 @@ function Invoke-JindaConfiguration {
         $remotePlan = Get-LanRemoteAccessPlan -Address $LanIPAddress -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM
     }
     Set-JindaWindowsEnglish -Keyboard $Keyboard
+    Write-Host ''
+    Set-JindaBrowserBookmarks
     if ($remotePlan) {
         Write-Host ''
         Write-Host 'Configuring the selected LAN access options...'
