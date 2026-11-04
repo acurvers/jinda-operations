@@ -13,6 +13,7 @@ Describe 'All requested Jinda applications' {
         $script:wingetExitCodes = @(0) * 15
         $script:throwChrome = $false
         Mock Install-JindaYodeck { $false }
+        Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
     }
 
@@ -37,6 +38,24 @@ Describe 'All requested Jinda applications' {
         $script:wingetExitCodes = @(-1978335189, -1978335135, -1978335189) + (@(0) * 12)
         (Install-JindaSoftware) | Should Be $false
         $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'installs the extension immediately after an already-current VS Code' {
+        $script:wingetExitCodes[3] = -1978335189
+        Mock Install-JindaVSCodePowerShellExtension {
+            $script:extensionInstallPosition = $script:wingetCalls.Count
+        }
+        Install-JindaSoftware | Should Be $false
+        $script:extensionInstallPosition | Should Be 4
+        Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 1 -Exactly -Scope It
+        $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'stops the run if the PowerShell extension fails' {
+        Mock Install-JindaVSCodePowerShellExtension { throw 'VS Code: PowerShell-extensie installeren is mislukt' }
+        { Install-JindaSoftware } | Should Throw 'PowerShell-extensie installeren is mislukt'
+        $script:wingetCalls.Count | Should Be 4
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
     }
 
     It 'continues installing the remaining packages when the first requests a reboot' {

@@ -153,6 +153,48 @@ function Invoke-JindaManagedScript {
 }
 # END shared runtime.
 
+function Get-JindaVSCodeCliPath {
+    # A fresh machine installation may not yet be visible in this process's PATH.
+    foreach ($root in (@($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+        Where-Object { $_ } | Select-Object -Unique)) {
+        $candidate = Join-Path $root 'Microsoft VS Code\bin\code.cmd'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    if ($env:LOCALAPPDATA) {
+        $candidate = Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    $command = Get-Command -Name 'code.cmd' -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    throw 'VS Code: code.cmd is na installatie niet gevonden.'
+}
+
+function Install-JindaVSCodePowerShellExtension {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $ErrorActionPreference = 'Stop'
+    $PSNativeCommandUseErrorActionPreference = $false
+    if (-not $PSCmdlet.ShouldProcess('VS Code: ms-vscode.PowerShell', 'Install or update the PowerShell extension')) { return }
+    $cli = Get-JindaVSCodeCliPath
+    $extensionId = 'ms-vscode.PowerShell'
+    Write-Host 'PowerShell-extensie voor VS Code installeren of bijwerken voor het uitvoerende account...'
+    & $cli --install-extension $extensionId --force | Out-Host
+    $installExitCode = $LASTEXITCODE
+    if ($installExitCode -ne 0) {
+        throw "VS Code: PowerShell-extensie installeren is mislukt (exitcode $installExitCode)."
+    }
+    $installed = @(& $cli --list-extensions)
+    $verifyExitCode = $LASTEXITCODE
+    if ($verifyExitCode -ne 0) {
+        throw "VS Code: extensies controleren is mislukt (exitcode $verifyExitCode)."
+    }
+    if (-not ($installed | Where-Object { ([string]$_).Trim() -ieq $extensionId })) {
+        throw 'VS Code: de PowerShell-extensie is na installatie niet teruggevonden.'
+    }
+    Write-Host 'PowerShell-extensie voor VS Code is beschikbaar.'
+}
+
 function Test-JindaYodeckInstalled {
     $uninstallPaths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
@@ -261,6 +303,9 @@ function Install-JindaSoftware {
                 '8A150061' { Write-Host "$($package.Name) is al geinstalleerd; overgeslagen." }
                 '00000BC2' { $restartNeeded = $true }
                 default { throw "$($package.Name): WinGet is mislukt (exitcode $wingetExitCode / 0x$exitCodeHex)." }
+            }
+            if ($package.Id -eq 'Microsoft.VisualStudioCode') {
+                Install-JindaVSCodePowerShellExtension
             }
         }
         catch {

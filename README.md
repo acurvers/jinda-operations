@@ -113,6 +113,12 @@ gekozen bron aanbiedt. Is er geen nieuwere versie, dan gaat het script verder.
 De pakket- en bronvoorwaarden worden automatisch geaccepteerd.
 Dezelfde TeamViewer-installatie staat maar eenmaal in de lijst.
 
+Direct na VS Code installeert of actualiseert het script de officiele Microsoft
+PowerShell-extensie (`ms-vscode.PowerShell`) zonder extra vragen. Dit gebeurt ook
+als VS Code zelf al actueel is. Het script controleert daarna of de extensie is
+geinstalleerd en stopt bij een fout. De extensie geldt voor het uitvoerende
+Windows-account; bij UAC met een ander administratoraccount geldt dit voor dat account.
+
 De opgegeven oude ID's Microsoft.OneNote, LogMeIn.LastPass en WhatsApp.WhatsApp
 zijn vervangen door bovenstaande actuele vermeldingen. OneNote gebruikt de
 huidige desktopversie, niet de oude OneNote voor Windows 10.
