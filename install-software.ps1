@@ -302,11 +302,17 @@ function Install-JindaSoftware {
         @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         # Temporarily disabled: Microsoft Teams installation is not working reliably (user report).
         # @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
-        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
         @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'voidtools.Everything'; Name = 'Everything'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        # Yodeck uses its signed official installer; WhatsApp must be the final app.
+        @{ Name = 'Yodeck Player'; Source = 'yodeck' }
+        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
     )
     foreach ($package in $packages) {
+        if ($package.Source -eq 'yodeck') {
+            if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
+            continue
+        }
         Write-Host ''
         if (-not $PSCmdlet.ShouldProcess($package.Name, 'Install using WinGet')) {
             continue
@@ -338,7 +344,6 @@ function Install-JindaSoftware {
             Write-Warning "Google Chrome did not complete successfully: $($_.Exception.Message) Installation will continue with the remaining apps."
         }
     }
-    if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
     if ($restartNeeded) {
         Write-Warning 'Software is installed. Restart Windows to complete the installation.'
     }

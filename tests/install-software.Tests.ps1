@@ -9,6 +9,7 @@ function Invoke-JindaFakeWinget {
         return
     }
     $script:wingetCalls.Add(@($args))
+    $script:appOrder.Add($args[2])
     if ($script:throwChrome -and $args -contains 'Google.Chrome') { throw 'Simulated Chrome process error' }
     $global:LASTEXITCODE = $script:wingetExitCodes[$script:wingetCalls.Count - 1]
     Write-Output 'Simulated WinGet output'
@@ -24,10 +25,11 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetUpgradeCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetSequence = New-Object 'System.Collections.Generic.List[string]'
+        $script:appOrder = New-Object 'System.Collections.Generic.List[string]'
         $script:wingetUpgradeExitCode = 0
         $script:wingetExitCodes = @(0) * 14
         $script:throwChrome = $false
-        Mock Install-JindaYodeck { $false }
+        Mock Install-JindaYodeck { $script:appOrder.Add('Yodeck'); $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
     }
@@ -165,8 +167,8 @@ Describe 'All requested Jinda applications' {
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
     }
 
-    It 'still stops immediately for a failure in each other WinGet app' {
-        foreach ($failedIndex in 1..13) {
+    It 'still stops immediately for a failure in each earlier non-Chrome WinGet app' {
+        foreach ($failedIndex in 1..12) {
             $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
             $script:wingetExitCodes = @(0) * 14
             $script:wingetExitCodes[$failedIndex] = 1
@@ -206,7 +208,7 @@ Describe 'All requested Jinda applications' {
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
         $expected = @('Google.Chrome','TeamViewer.TeamViewer','Microsoft.PowerShell','Microsoft.VisualStudioCode',
             'XPFFZHVGQWWLHB','Notepad++.Notepad++','Reolink.Reolink','dotPDN.PaintDotNet',
-            'LastPass.LastPass','Git.Git','Zoom.Zoom','9NKSQGP7F2NH','VideoLAN.VLC','voidtools.Everything')
+            'LastPass.LastPass','Git.Git','Zoom.Zoom','VideoLAN.VLC','voidtools.Everything','9NKSQGP7F2NH')
         @($ids | Select-Object -Unique).Count | Should Be 14
         ($ids -contains 'Discord.Discord') | Should Be $false
         ($ids -contains 'Microsoft.Teams') | Should Be $false
@@ -231,15 +233,30 @@ Describe 'All requested Jinda applications' {
         }
     }
 
+    It 'installs WhatsApp last, after VLC, Everything and the direct Yodeck installer' {
+        Install-JindaSoftware | Should Be $false
+        ($script:appOrder | Select-Object -Last 4) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,Yodeck,9NKSQGP7F2NH'
+        $script:appOrder.Count | Should Be 15
+    }
+
+    It 'preserves a fatal WhatsApp error after every other app has been attempted' {
+        $script:wingetExitCodes[13] = -2147023584
+        { Install-JindaSoftware } | Should Throw 'WhatsApp: WinGet failed'
+        $script:wingetCalls.Count | Should Be 14
+        ($script:appOrder | Select-Object -Last 4) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,Yodeck,9NKSQGP7F2NH'
+        Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
+    }
+
     It 'propagates a Yodeck restart requirement' {
         Mock Install-JindaYodeck { $true }
         Install-JindaSoftware | Should Be $true
     }
 
-    It 'reports a Yodeck failure after the WinGet apps finish' {
+    It 'reports a Yodeck failure before attempting WhatsApp' {
         Mock Install-JindaYodeck { throw 'Yodeck: installation failed' }
         { Install-JindaSoftware } | Should Throw 'Yodeck: installation failed'
-        $script:wingetCalls.Count | Should Be 14
+        $script:wingetCalls.Count | Should Be 13
+        (@($script:wingetCalls | ForEach-Object { $_[2] }) -contains '9NKSQGP7F2NH') | Should Be $false
     }
 
 }

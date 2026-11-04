@@ -144,10 +144,12 @@ ook deze WinGet-update overgeslagen.
 | Git inclusief Git Bash | Git.Git / winget | Alle gebruikers |
 | Zoom | Zoom.Zoom / winget | Alle gebruikers |
 | Teams (tijdelijk uitgeschakeld) | Microsoft.Teams / winget, MSIX | Wordt momenteel niet geinstalleerd |
-| WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 | VLC | VideoLAN.VLC / winget | Alle gebruikers |
 | Everything | voidtools.Everything / winget | Alle gebruikers |
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
+| WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
+
+WhatsApp wordt als laatste app geprobeerd, na Yodeck. Bij een fout stopt het script nog steeds en start de configuratie niet.
 
 WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Alle apps in de
 WinGet-lijst worden geinstalleerd of bijgewerkt naar de nieuwste versie die de
