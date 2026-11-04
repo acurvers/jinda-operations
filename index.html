@@ -32,7 +32,7 @@
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Init regelt de rest.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
-      <button class="copy-button" id="copy-command" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
+      <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="8" y="8" width="13" height="13" rx="2"></rect>
           <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
@@ -40,7 +40,17 @@
       </button>
     </div>
     <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
-    <p>WinGet-fout? Voeg <code>-RepairWinGet</code> toe na <code>-File $p</code> om eerst WinGet te herstellen.</p>
+    <p><strong>Bij WinGet-fouten:</strong> eerst WinGet herstellen, daarna installeren en configureren.</p>
+    <div class="command-row">
+      <pre><code id="repair-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -RepairWinGet }</code></pre>
+      <button class="copy-button" id="copy-repair-command" data-copy-target="repair-code" data-status-target="copy-repair-status" type="button" aria-label="Kopieer opdracht met WinGet-herstel" title="Kopieer opdracht met WinGet-herstel">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="8" y="8" width="13" height="13" rx="2"></rect>
+          <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+    </div>
+    <p class="copy-status" id="copy-repair-status" role="status" aria-live="polite"></p>
     <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. Het Windows-taalonderdeel gebruikt intern Windows PowerShell 5.1.</p>
     <h2>Apps</h2>
     <ul class="app-list">
@@ -64,19 +74,20 @@
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
   <script>
-    const copyButton = document.getElementById('copy-command');
-    const copyStatus = document.getElementById('copy-status');
-    copyButton.addEventListener('click', async () => {
-      copyButton.disabled = true;
-      copyStatus.textContent = '';
-      try {
-        await navigator.clipboard.writeText(document.getElementById('init-code').textContent);
-        copyStatus.textContent = 'Gekopieerd!';
-      } catch {
-        copyStatus.textContent = 'Kopiëren lukt niet. Selecteer de opdracht en druk op Ctrl+C.';
-      } finally {
-        copyButton.disabled = false;
-      }
+    document.querySelectorAll('.copy-button[data-copy-target]').forEach((copyButton) => {
+      const copyStatus = document.getElementById(copyButton.dataset.statusTarget);
+      copyButton.addEventListener('click', async () => {
+        copyButton.disabled = true;
+        copyStatus.textContent = '';
+        try {
+          await navigator.clipboard.writeText(document.getElementById(copyButton.dataset.copyTarget).textContent);
+          copyStatus.textContent = 'Gekopieerd!';
+        } catch {
+          copyStatus.textContent = 'Kopiëren lukt niet. Selecteer de opdracht en druk op Ctrl+C.';
+        } finally {
+          copyButton.disabled = false;
+        }
+      });
     });
   </script>
 </body>
