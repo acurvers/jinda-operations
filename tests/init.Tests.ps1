@@ -11,6 +11,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
+        Mock Invoke-RestMethod { @{ sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } }
         Mock Invoke-WebRequest { $script:initEvents.Add("download:$Uri") }
         Mock Get-JindaPowerShell {
             if ($script:initLaunches.Count -eq 0) { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
@@ -42,6 +43,40 @@ Describe 'Initialization orchestrates the two existing scripts' {
     It 'passes the optional normal US keyboard to configuration' {
         Invoke-JindaInitialization -Keyboard US | Should Be 0
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard US'
+    }
+
+    It 'downloads both scripts from the supplied commit without resolving main again' {
+        $sha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        Invoke-JindaInitialization -SourceCommit $sha | Should Be 0
+        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-WebRequest -Times 2 -Exactly -Scope It -ParameterFilter {
+            $Uri -like 'https://raw.githubusercontent.com/acurvers/jinda-operations/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/*.ps1'
+        }
+    }
+
+    It 'resolves main only once for a manually started init' {
+        Invoke-JindaInitialization | Should Be 0
+        Assert-MockCalled Invoke-RestMethod -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Uri -eq 'https://api.github.com/repos/acurvers/jinda-operations/commits/main'
+        }
+        Assert-MockCalled Invoke-WebRequest -Times 2 -Exactly -Scope It -ParameterFilter {
+            $Uri -like 'https://raw.githubusercontent.com/acurvers/jinda-operations/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/*.ps1'
+        }
+    }
+
+    It 'starts nothing if GitHub cannot resolve a version' {
+        Mock Invoke-RestMethod { throw 'GitHub unavailable' }
+        { Invoke-JindaInitialization } | Should Throw 'GitHub unavailable'
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
+        $script:initLaunches.Count | Should Be 0
+    }
+
+    It 'starts nothing if GitHub returns an invalid version' {
+        Mock Invoke-RestMethod { @{ sha = 'main' } }
+        { Invoke-JindaInitialization } | Should Throw 'geen geldige scriptversie'
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
+        $script:initLaunches.Count | Should Be 0
     }
 
     It 'does not repair WinGet unless requested' {
@@ -99,6 +134,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
         Assert-MockCalled Get-JindaSetupOptions -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-RestMethod -Times 0 -Exactly -Scope It
     }
 
     It 'skips the installer download, execution and repair when apps are declined' {
@@ -140,6 +176,7 @@ $script:initEntry = [scriptblock]::Create($entryBody.Replace('$PSCommandPath', "
 
 Describe 'Initialization entry point forwards the repair switch' {
     BeforeEach {
+        $SourceCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
         Mock Get-JindaPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
         Mock Get-JindaCurrentPowerShell { 'C:\Program Files\PowerShell\7\pwsh.exe' }
         Mock Test-JindaAdministrator { $true }
@@ -162,6 +199,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
             $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
             $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
+            ($ScriptArguments -join ' ') -match '-SourceCommit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' -and
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
             $ScriptArguments -contains '10.20.30.40'
         }
@@ -173,13 +211,16 @@ Describe 'Initialization entry point forwards the repair switch' {
         $RepairWinGet = $true
         & $script:initEntry
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
-            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet'
+            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
+            ($ScriptArguments -join ' ') -match '-SourceCommit bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
         }
     }
 
     It 'passes the switch into initialization once already elevated' {
         $RepairWinGet = $true
         & $script:initEntry
-        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter { $RepairWinGet }
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter {
+            $RepairWinGet -and $SourceCommit -eq 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+        }
     }
 }

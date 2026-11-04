@@ -1,15 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Controleert de Pages-publicatie en de werkelijke downloads voor een exacte commit.
+Controleert directe scriptdownloads of de Pages-webpagina voor een exacte commit.
 .DESCRIPTION
 Alleen lezen: geen installatie, herstart, publicatie of automatische retry van een
-geannuleerde workflow. Exitcode 0 betekent dat Pages succesvol is afgerond en de
-gewone publieke URL's byte voor byte bij de opgegeven commit horen; anders 1.
+geannuleerde workflow. Met -ScriptsOnly worden alleen de drie directe GitHub-downloads
+byte voor byte gecontroleerd, zonder Pages. Zonder die switch wordt de geslaagde
+Pages-run plus index.html gecontroleerd. Exitcode 0 bevestigt de gekozen controle.
 #>
 [CmdletBinding()]
 param(
     [ValidatePattern('^[0-9a-f]{40}$')][string]$CommitSha,
+    [switch]$ScriptsOnly,
     [ValidateRange(1, 1800)][int]$TimeoutSeconds = 600,
     [ValidateRange(1, 60)][int]$PollSeconds = 20
 )
@@ -46,13 +48,14 @@ function Test-JindaPagesPublication {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{40}$')][string]$CommitSha,
+        [switch]$ScriptsOnly,
         [ValidateRange(1, 1800)][int]$TimeoutSeconds = 600,
         [ValidateRange(1, 60)][int]$PollSeconds = 20
     )
     $api = 'https://api.github.com/repos/acurvers/jinda-operations'
     $site = 'https://acurvers.github.io/jinda-operations'
     $headers = @{ Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
-    $paths = @('index.html', 'init.ps1', 'install-software.ps1', 'set-windows-english.ps1')
+    $paths = if ($ScriptsOnly) { @('init.ps1', 'install-software.ps1', 'set-windows-english.ps1') } else { @('index.html') }
     $tree = Invoke-RestMethod -Uri "$api/git/trees/${CommitSha}?recursive=1" -Headers $headers -TimeoutSec 20 -ErrorAction Stop
     if ($tree.truncated) { throw 'Git-bestandenlijst is onvolledig; publicatie niet bevestigd.' }
     $expected = @{}
@@ -60,6 +63,19 @@ function Test-JindaPagesPublication {
         $entry = @($tree.tree | Where-Object { $_.path -eq $path -and $_.type -eq 'blob' })
         if ($entry.Count -ne 1) { throw "Verplicht publicatiebestand ontbreekt in commit: $path" }
         $expected[$path] = $entry[0].sha
+    }
+
+    if ($ScriptsOnly) {
+        foreach ($path in $paths) {
+            $url = "https://raw.githubusercontent.com/acurvers/jinda-operations/$CommitSha/$path"
+            if ((Get-JindaPublicBlobSha -Uri $url) -ne $expected[$path]) {
+                throw "GitHub-download $path wijkt af van de gevraagde commit."
+            }
+        }
+        return [pscustomobject]@{
+            Verified = $true; Commit = $CommitSha; Source = 'GitHub'; Files = $paths.Count
+            CheckedAtUtc = [DateTime]::UtcNow.ToString('o')
+        }
     }
 
     $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -106,7 +122,7 @@ function Test-JindaPagesPublication {
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         if (-not $CommitSha) { throw 'Geef de volledige gepubliceerde commit op met -CommitSha.' }
-        Test-JindaPagesPublication -CommitSha $CommitSha -TimeoutSeconds $TimeoutSeconds -PollSeconds $PollSeconds
+        Test-JindaPagesPublication -CommitSha $CommitSha -ScriptsOnly:$ScriptsOnly -TimeoutSeconds $TimeoutSeconds -PollSeconds $PollSeconds
         exit 0
     }
     catch { Write-Error $_ -ErrorAction Continue; exit 1 }

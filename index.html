@@ -31,7 +31,7 @@
     <p>Windows 11 Pro inrichten: optioneel <strong>16 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Kies aan het begin <strong>apps installeren, Remote Desktop en WinRM: y/n</strong> (zo nodig ook het LAN). Daarna loopt alles zonder verdere vragen door.</p>
     <div class="command-row">
-      <pre><code id="init-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
+      <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr &quot;https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1&quot; -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="8" y="8" width="13" height="13" rx="2"></rect>
@@ -42,7 +42,7 @@
     <p class="copy-status" id="copy-status" role="status" aria-live="polite"></p>
     <p><strong>Bij WinGet-fouten:</strong> eerst WinGet herstellen, daarna installeren en configureren.</p>
     <div class="command-row">
-      <pre><code id="repair-code">&amp; { $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -RepairWinGet }</code></pre>
+      <pre><code id="repair-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = &quot;$env:TEMP\jinda-init.ps1&quot;; iwr &quot;https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1&quot; -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s -RepairWinGet }</code></pre>
       <button class="copy-button" id="copy-repair-command" data-copy-target="repair-code" data-status-target="copy-repair-status" type="button" aria-label="Kopieer opdracht met WinGet-herstel" title="Kopieer opdracht met WinGet-herstel">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="8" y="8" width="13" height="13" rx="2"></rect>

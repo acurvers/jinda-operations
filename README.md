@@ -8,10 +8,15 @@ De [instructiepagina](https://acurvers.github.io/jinda-operations/) bevat de
 eenregelige startopdracht voor [init.ps1](init.ps1). Init downloadt en start
 de gekozen installatie en configuratie achter elkaar; de inhoud blijft in de twee vaste scripts.
 
+De scripts komen rechtstreeks uit GitHub, onafhankelijk van GitHub Pages.
+De startopdracht kiest eenmaal de nieuwste commit op main en gebruikt diezelfde
+versie voor init en beide deelscripts. Alleen de instructiewebpagina gebruikt Pages.
+Een fout bij het ophalen stopt de uitvoering; er wordt geen oud lokaal script gestart.
+
 ## Starten
 
 ~~~powershell
-& { $p = "$env:TEMP\jinda-init.ps1"; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }
+& { $ErrorActionPreference = "Stop"; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = "$env:TEMP\jinda-init.ps1"; iwr "https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1" -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s }
 ~~~
 
 De download moet slagen voordat init start. De startopdracht voert de scripts
@@ -46,7 +51,7 @@ Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
 `-RepairWinGet` na `-File $p`:
 
 ~~~powershell
-& { $p = "$env:TEMP\jinda-init.ps1"; iwr https://acurvers.github.io/jinda-operations/init.ps1 -UseBasicParsing -OutFile $p -ErrorAction Stop; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -RepairWinGet }
+& { $ErrorActionPreference = "Stop"; $s = (irm https://api.github.com/repos/acurvers/jinda-operations/commits/main -TimeoutSec 20).sha; $p = "$env:TEMP\jinda-init.ps1"; iwr "https://raw.githubusercontent.com/acurvers/jinda-operations/$s/init.ps1" -UseBasicParsing -OutFile $p -TimeoutSec 60; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p -SourceCommit $s -RepairWinGet }
 ~~~
 
 Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGallery
@@ -215,28 +220,31 @@ Een echte UAC-/installatie-/taalwijzigingsronde moet op de doel-pc worden getest
 
 ## Publicatie en bronnen
 
-GitHub Pages publiceert de hoofdmap van main; init en de twee vaste script-URL's volgen
-de gepubliceerde versie. Er zijn geen losse scripts per programma of instelling.
+GitHub Pages publiceert alleen de instructiewebpagina. De startopdracht haalt init
+en de twee vaste scripts rechtstreeks uit dezelfde commit op main. Er zijn geen
+losse scripts per programma of instelling.
 
 ### Verplichte controle na publicatie
 
-Een geslaagde commit of push betekent nog niet dat de nieuwe versie online staat.
-Voer na elke publicatie deze alleen-lezen-controle uit met de volledige commit-SHA:
+Controleer de drie scripts rechtstreeks via GitHub met de volledige commit-SHA:
 
 ~~~powershell
-.\tools\Test-PagesPublication.ps1 -CommitSha <volledige-40-tekens-commit-SHA>
+.\tools\Test-PagesPublication.ps1 -ScriptsOnly -CommitSha <volledige-40-tekens-commit-SHA>
 ~~~
 
-De controle wacht maximaal tien minuten op een geslaagde `pages build and deployment`
-voor die commit en vergelijkt de ontvangen bytes van `index.html`, `init.ps1`,
-`install-software.ps1` en `set-windows-english.ps1` met GitHub. De gewone download-URL's
-worden gebruikt, zodat ook achterlopende caches worden opgemerkt. Exitcode 0 is
-publicatie bevestigd; annulering, fouten, verouderde downloads of tijdsoverschrijding
-geven exitcode 1. Er is geen token, extra software of periodieke taak nodig.
+Deze alleen-lezen-controle vergelijkt de ontvangen bytes van `init.ps1`,
+`install-software.ps1` en `set-windows-english.ps1` met de opgegeven GitHub-commit.
+Exitcode 0 bevestigt de scriptdownloads. Er is geen Pages-build, token of extra software nodig.
 
-Bij annulering: bekijk de bijbehorende GitHub Actions-run, herstart de geannuleerde
-publicatiestap en voer deze controle opnieuw uit. Rapporteer de publicatie pas als
-geslaagd na exitcode 0. Start geen inrichting op een pc alleen om publicatie te testen.
+Alleen als de instructiewebpagina is gewijzigd, controleer je ook Pages:
+
+~~~powershell
+.\tools\Test-PagesPublication.ps1 -CommitSha <volledige-40-tekens-commit-SHA> -TimeoutSeconds 60
+~~~
+
+Deze aparte controle vereist een geslaagde Pages-run en de juiste bytes van
+`index.html`. Als Pages nog wacht, meld je dat afzonderlijk; de directe scripts
+kunnen al beschikbaar zijn. Start geen inrichting op een pc om publicatie te testen.
 
 Microsoft:
 [PowerShell installeren](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows),
