@@ -3,6 +3,7 @@
 .SYNOPSIS
 Install Jinda apps using WinGet and the official Yodeck Windows installer.
 .DESCRIPTION
+First updates WinGet (Microsoft App Installer) if a newer version is available.
 Installs for all users where supported. Existing WinGet apps are updated when
 a newer version is available from the selected source.
 Requests administrator privileges and selects the latest installed stable PowerShell 7+.
@@ -261,6 +262,28 @@ function Install-JindaSoftware {
         throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
     }
 
+    $restartNeeded = $false
+    if ($PSCmdlet.ShouldProcess('WinGet (Microsoft.AppInstaller)', 'Upgrade if a newer version is available')) {
+        Write-Host ''
+        Write-Host 'Checking for a WinGet update and installing it if available...'
+        # Microsoft-supported self-update; no extra PowerShell module is required.
+        # https://learn.microsoft.com/en-us/windows/msix/app-installer/install-update-app-installer
+        & $winget.Source upgrade --id Microsoft.AppInstaller --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host
+        $wingetExitCode = $LASTEXITCODE
+        $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
+        switch ($exitCodeHex) {
+            '00000000' { Write-Host 'WinGet update completed.' }
+            '8A15002B' { Write-Host 'WinGet: no newer version is available.' }
+            '00000BC2' { $restartNeeded = $true }
+            default { throw "WinGet self-update failed (exit code $wingetExitCode / 0x$exitCodeHex). App installation has not started." }
+        }
+        # Updating App Installer can replace the executable's versioned path.
+        $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $winget) {
+            throw 'WinGet was not found after its update. Reopen PowerShell and run setup again.'
+        }
+    }
+
     # Scope is only forced when the manifest supports it; empty means installer default.
     $packages = @(
         @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
@@ -280,7 +303,6 @@ function Install-JindaSoftware {
         @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
         @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
     )
-    $restartNeeded = $false
     foreach ($package in $packages) {
         Write-Host ''
         if (-not $PSCmdlet.ShouldProcess($package.Name, 'Install using WinGet')) {

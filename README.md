@@ -98,6 +98,13 @@ doorgegeven. Init start Windows niet zelf opnieuw op.
 
 ## Software
 
+Voor de apps werkt het installatiescript eerst WinGet zelf bij via
+`winget upgrade --id Microsoft.AppInstaller --exact --source winget`.
+Dit gebeurt zonder extra vragen en alleen als een nieuwere versie beschikbaar is;
+er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het script
+voordat de apps beginnen. Kies je aan het begin geen app-installatie, dan wordt
+ook deze WinGet-update overgeslagen.
+
 | App | Pakket / bron | Installatiebereik |
 | --- | --- | --- |
 | Chrome | Google.Chrome / winget | Alle gebruikers |

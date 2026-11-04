@@ -263,8 +263,8 @@ function Get-JindaSetupOptions {
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
-    $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN?' -Choice $RemoteDesktop
-    $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN?' -Choice $PowerShellRemoting
+    $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
+    $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $address = ''
     if ($rdp -or $winrm) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; LanIPAddress = $address }

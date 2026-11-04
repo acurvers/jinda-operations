@@ -1,20 +1,96 @@
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'install-software.ps1')
 
 function Invoke-JindaFakeWinget {
+    $script:wingetSequence.Add($args[0])
+    if ($args[0] -eq 'upgrade') {
+        $script:wingetUpgradeCalls.Add(@($args))
+        $global:LASTEXITCODE = $script:wingetUpgradeExitCode
+        Write-Output 'Simulated WinGet self-update output'
+        return
+    }
     $script:wingetCalls.Add(@($args))
     if ($script:throwChrome -and $args -contains 'Google.Chrome') { throw 'Simulated Chrome process error' }
     $global:LASTEXITCODE = $script:wingetExitCodes[$script:wingetCalls.Count - 1]
     Write-Output 'Simulated WinGet output'
 }
 
+function Invoke-JindaUpdatedFakeWinget {
+    $script:updatedWingetUsed = $true
+    Invoke-JindaFakeWinget @args
+}
+
 Describe 'All requested Jinda applications' {
     BeforeEach {
         $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
+        $script:wingetUpgradeCalls = New-Object 'System.Collections.Generic.List[object]'
+        $script:wingetSequence = New-Object 'System.Collections.Generic.List[string]'
+        $script:wingetUpgradeExitCode = 0
         $script:wingetExitCodes = @(0) * 15
         $script:throwChrome = $false
         Mock Install-JindaYodeck { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
+    }
+
+    It 'updates only WinGet before the apps without prompts, forced upgrades or reboots' {
+        Install-JindaSoftware | Should Be $false
+        $script:wingetSequence[0] | Should Be 'upgrade'
+        $script:wingetSequence[1] | Should Be 'install'
+        $script:wingetUpgradeCalls.Count | Should Be 1
+        $call = $script:wingetUpgradeCalls[0]
+        $call[[array]::IndexOf($call, '--id') + 1] | Should Be 'Microsoft.AppInstaller'
+        $call[[array]::IndexOf($call, '--source') + 1] | Should Be 'winget'
+        foreach ($flag in @('--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')) {
+            ($call -contains $flag) | Should Be $true
+        }
+        foreach ($flag in @('--all', '--force', '--allow-reboot', '--include-unknown')) {
+            ($call -contains $flag) | Should Be $false
+        }
+        $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'continues when WinGet itself has no newer version' {
+        $script:wingetUpgradeExitCode = -1978335189
+        Install-JindaSoftware | Should Be $false
+        $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'stops before all apps when the WinGet self-update fails' {
+        $script:wingetUpgradeExitCode = -1978335217
+        { Install-JindaSoftware } | Should Throw 'WinGet self-update failed'
+        $script:wingetCalls.Count | Should Be 0
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
+    }
+
+    It 'preserves a WinGet update restart requirement while installing the apps' {
+        $script:wingetUpgradeExitCode = 3010
+        Install-JindaSoftware | Should Be $true
+        $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'uses the newly resolved WinGet executable for the apps after updating' {
+        $script:wingetResolutions = 0
+        $script:updatedWingetUsed = $false
+        Mock Get-Command {
+            $script:wingetResolutions++
+            $path = if ($script:wingetResolutions -eq 1) { 'Invoke-JindaFakeWinget' } else { 'Invoke-JindaUpdatedFakeWinget' }
+            [pscustomobject]@{ Source = $path }
+        } -ParameterFilter { $Name -eq 'winget.exe' }
+        Install-JindaSoftware | Should Be $false
+        $script:updatedWingetUsed | Should Be $true
+        $script:wingetResolutions | Should Be 2
+        $script:wingetCalls.Count | Should Be 15
+    }
+
+    It 'stops if WinGet disappears after updating instead of using the old executable' {
+        $script:wingetResolutions = 0
+        Mock Get-Command {
+            $script:wingetResolutions++
+            if ($script:wingetResolutions -eq 1) { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } }
+        } -ParameterFilter { $Name -eq 'winget.exe' }
+        { Install-JindaSoftware } | Should Throw 'WinGet was not found after its update'
+        $script:wingetCalls.Count | Should Be 0
     }
 
     It 'allows upgrades for every package and keeps the stable PowerShell machine MSI' {
@@ -116,6 +192,7 @@ Describe 'All requested Jinda applications' {
     It 'does not run WinGet during WhatIf' {
         (Install-JindaSoftware -WhatIf) | Should Be $false
         $script:wingetCalls.Count | Should Be 0
+        $script:wingetUpgradeCalls.Count | Should Be 0
     }
 
     It 'reports missing WinGet before attempting any package' {

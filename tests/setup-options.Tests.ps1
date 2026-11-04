@@ -15,9 +15,9 @@ Describe 'Choices are collected once before unattended setup' {
         $options.RemoteDesktop | Should Be $false
         $options.PowerShellRemoting | Should Be $false
         $script:prompts.Count | Should Be 3
-        $script:prompts[0] | Should Match 'Apps.*\[Y/n\]'
-        $script:prompts[1] | Should Match 'Remote Desktop.*\[y/N\]'
-        $script:prompts[2] | Should Match 'WinRM.*\[y/N\]'
+        $script:prompts[0] | Should Be 'Download and install apps? [Y/n]'
+        $script:prompts[1] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
+        $script:prompts[2] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 
