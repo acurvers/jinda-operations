@@ -122,6 +122,32 @@ en [Edge ManagedFavorites](https://learn.microsoft.com/en-us/deployedge/microsof
 
 ## Software
 
+### Apps overslaan met skip-apps.conf
+
+In [skip-apps.conf](skip-apps.conf) staan alle app-ID's al uitgecommentarieerd.
+Verwijder het eerste `#` van een appregel om de installatie **en updates** van
+die app over te slaan. Bijvoorbeeld:
+
+~~~text
+# Google.Chrome     # Normale installatie/update blijft aan
+9NKSQGP7F2NH        # WhatsApp overslaan
+~~~
+
+Standaard slaat het bestand niets over. Een overgeslagen app wordt niet verwijderd;
+bij VS Code wordt ook de bijbehorende PowerShell-extensie overgeslagen.
+Discord en Teams blijven tijdelijk uitgeschakeld in het script, ongeacht deze lijst.
+Yodeck heeft de vaste sleutel `Yodeck.Player`. Lege regels en tekst na `#` worden
+genegeerd; hoofdletters maken niet uit. Een onbekende ID of ontbrekend bestand
+stopt de installatie met een foutmelding voordat WinGet iets bijwerkt.
+
+Wijzig het bestand in GitHub op `main` voor alle volgende runs van de bestaande
+oneliner. Voor een losse pc kun je het complete pakket uitpakken, het bestand
+naast `install-software.ps1` aanpassen en daarna `init.ps1` starten.
+Het bestand wordt altijd uit hetzelfde pakket gelezen, niet uit de huidige werkmap.
+Als alle apps zijn overgeslagen, wordt ook de WinGet-update overgeslagen.
+
+### Installatielijst
+
 Voor de apps werkt het installatiescript eerst WinGet zelf bij via
 `winget upgrade --id Microsoft.AppInstaller --exact --source winget`.
 Dit gebeurt zonder extra vragen en alleen als een nieuwere versie beschikbaar is;
@@ -146,10 +172,22 @@ ook deze WinGet-update overgeslagen.
 | Teams (tijdelijk uitgeschakeld) | Microsoft.Teams / winget, MSIX | Wordt momenteel niet geinstalleerd |
 | VLC | VideoLAN.VLC / winget | Alle gebruikers |
 | Everything | voidtools.Everything / winget | Alle gebruikers |
+| Beyond Compare 5 (proefversie; licentie apart) | ScooterSoftware.BeyondCompare.5 / winget | Alle gebruikers, Engels |
+| ChatGPT Classic | 9NT1R1C2HH7J / msstore | Standaard van Store |
+| Codex desktop (nu ChatGPT) | OpenAI.ChatGPT / winget, MSIX | Uitvoerende gebruiker |
+| Signal | OpenWhisperSystems.Signal / winget | Uitvoerende gebruiker |
+| OBS Studio | OBSProject.OBSStudio / winget, nullsoft | Alle gebruikers |
+| Adobe Acrobat Reader (64-bit) | Adobe.Acrobat.Reader.64-bit / winget | Alle gebruikers |
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
 | WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 
 WhatsApp wordt als laatste app geprobeerd, na Yodeck. Bij een fout stopt het script nog steeds en start de configuratie niet.
+
+ChatGPT Classic en de Codex-desktopapp zijn aparte apps. De huidige
+[Codex-desktopapp heet ChatGPT](https://learn.chatgpt.com/docs/windows/windows-app)
+en wordt via WinGet als `OpenAI.ChatGPT` aangeboden. `OpenAI.Codex` is de
+afzonderlijke CLI en wordt hier niet geinstalleerd. Zelf inloggen op de
+OpenAI-apps en Signal koppelen aan je telefoon blijft nodig.
 
 WinGet en de Microsoft Store-bron moeten beschikbaar zijn. Alle apps in de
 WinGet-lijst worden geinstalleerd of bijgewerkt naar de nieuwste versie die de
@@ -292,14 +330,14 @@ losse scripts per programma of instelling.
 
 ### Verplichte controle na publicatie
 
-Controleer de drie scripts rechtstreeks via GitHub met de volledige commit-SHA:
+Controleer de drie scripts en skip-apps.conf rechtstreeks via GitHub met de volledige commit-SHA:
 
 ~~~powershell
 .\tools\Test-PagesPublication.ps1 -ScriptsOnly -CommitSha <volledige-40-tekens-commit-SHA>
 ~~~
 
 Deze alleen-lezen-controle vergelijkt de bytes in het GitHub-ZIP-pakket van `init.ps1`,
-`install-software.ps1` en `set-windows-english.ps1` met de opgegeven GitHub-commit.
+`install-software.ps1`, `set-windows-english.ps1` en `skip-apps.conf` met de opgegeven GitHub-commit.
 Exitcode 0 bevestigt de scriptdownloads. De inrichting zelf gebruikt geen API of token.
 De publicatiecontrole gebruikt de GitHub API om met de commit te vergelijken; bij
 veel controles kan een beheerder daarvoor tijdelijk `GH_TOKEN` meegeven.

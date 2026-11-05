@@ -29,8 +29,9 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
         $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
-        $script:initEvents[3] | Should Match '^run:.*install-software.ps1$'
-        $script:initEvents[4] | Should Match '^run:.*set-windows-english.ps1$'
+        $script:initEvents[3] | Should Match '^validate:.*skip-apps.conf$'
+        $script:initEvents[4] | Should Match '^run:.*install-software.ps1$'
+        $script:initEvents[5] | Should Match '^run:.*set-windows-english.ps1$'
         $script:initLaunches[0].Executable | Should Match 'WindowsPowerShell'
         $script:initLaunches[1].Executable | Should Be 'C:\Program Files\PowerShell\7\pwsh.exe'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
@@ -55,9 +56,10 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
         $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
-        $script:initEvents[3] | Should Be 'repair'
-        $script:initEvents[4] | Should Match '^run:.*install-software.ps1$'
-        $script:initEvents[5] | Should Match '^run:.*set-windows-english.ps1$'
+        $script:initEvents[3] | Should Match '^validate:.*skip-apps.conf$'
+        $script:initEvents[4] | Should Be 'repair'
+        $script:initEvents[5] | Should Match '^run:.*install-software.ps1$'
+        $script:initEvents[6] | Should Match '^run:.*set-windows-english.ps1$'
         Assert-MockCalled Repair-JindaWinGet -Times 1 -Exactly -Scope It
     }
 
@@ -94,6 +96,13 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches.Count | Should Be 0
     }
 
+    It 'does not repair or launch anything when the app skip file is missing' {
+        Mock Test-Path { $LiteralPath -notlike '*skip-apps.conf' }
+        { Invoke-JindaInitialization -RepairWinGet } | Should Throw 'Incomplete script package'
+        $script:initLaunches.Count | Should Be 0
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+    }
+
     It 'has no downloads, process launches or filesystem writes during WhatIf' {
         Invoke-JindaInitialization -RepairWinGet -WhatIf | Should Be 0
         Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
@@ -113,6 +122,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -LanIPAddress 10.20.30.40'
         [bool]$script:initLaunches[0].NonInteractive | Should Be $true
         Assert-MockCalled Test-Path -Times 0 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*install-software.ps1' }
+        Assert-MockCalled Test-Path -Times 0 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*skip-apps.conf' }
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
     }
 

@@ -11,7 +11,7 @@ Describe 'Pages publication must prove deployment and actual downloads' {
         $script:publicationMissingFile = $false
         Mock Invoke-RestMethod {
             if ($Uri -like '*/git/trees/*') {
-                $paths = @('index.html', 'init.ps1', 'install-software.ps1', 'set-windows-english.ps1')
+                $paths = @('index.html', 'init.ps1', 'install-software.ps1', 'set-windows-english.ps1', 'skip-apps.conf')
                 if ($script:publicationMissingFile) { $paths = @() }
                 return @{ truncated = $false; tree = @($paths | ForEach-Object { @{path=$_;type='blob';sha='expected'} }) }
             }
@@ -26,7 +26,7 @@ Describe 'Pages publication must prove deployment and actual downloads' {
         Mock Get-JindaArchiveBlobShas {
             if ($script:publicationDownloadError) { throw 'HTTP 404' }
             $hash = if ($script:publicationMismatch) { 'stale' } else { 'expected' }
-            return @{ 'init.ps1' = $hash; 'install-software.ps1' = $hash; 'set-windows-english.ps1' = $hash }
+            return @{ 'init.ps1' = $hash; 'install-software.ps1' = $hash; 'set-windows-english.ps1' = $hash; 'skip-apps.conf' = $hash }
         }
     }
     It 'confirms the Pages web page for the requested commit' {
@@ -68,11 +68,11 @@ Describe 'Pages publication must prove deployment and actual downloads' {
         { Test-JindaPagesPublication -CommitSha $script:publicationSha } | Should Throw 'ontbreekt'
     }
 
-    It 'verifies all three direct scripts even when Pages is queued' {
+    It 'verifies all three scripts and the app skip configuration even when Pages is queued' {
         $script:publicationStatus = 'queued'
         $result = Test-JindaPagesPublication -CommitSha $script:publicationSha -ScriptsOnly
         $result.Verified | Should Be $true
-        $result.Files | Should Be 3
+        $result.Files | Should Be 4
         $result.Source | Should Be 'GitHub ZIP'
         Assert-MockCalled Get-JindaArchiveBlobShas -Times 1 -Exactly -Scope It
         Assert-MockCalled Get-JindaPublicBlobSha -Times 0 -Exactly -Scope It
@@ -89,6 +89,13 @@ Describe 'Pages publication must prove deployment and actual downloads' {
     It 'rejects an unavailable direct script' {
         $script:publicationDownloadError = $true
         { Test-JindaPagesPublication -CommitSha $script:publicationSha -ScriptsOnly } | Should Throw 'HTTP 404'
+    }
+
+    It 'rejects stale skip configuration even when the three script downloads match' {
+        Mock Get-JindaArchiveBlobShas {
+            @{ 'init.ps1' = 'expected'; 'install-software.ps1' = 'expected'; 'set-windows-english.ps1' = 'expected'; 'skip-apps.conf' = 'stale' }
+        }
+        { Test-JindaPagesPublication -CommitSha $script:publicationSha -ScriptsOnly } | Should Throw 'skip-apps.conf wijkt af'
     }
 }
 

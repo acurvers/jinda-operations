@@ -250,6 +250,61 @@ function Install-JindaYodeck {
     }
 }
 
+function Get-JindaSoftwarePackages {
+    # Scope is only forced when the manifest supports it; empty means installer default.
+    return @(
+        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
+        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
+        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        # Current desktop OneNote, not the retired OneNote for Windows 10.
+        @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
+        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        # Temporarily disabled: Discord installation is not working reliably (user report).
+        # @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @() }
+        @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
+        @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @() }
+        @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        # Temporarily disabled: Microsoft Teams installation is not working reliably (user report).
+        # @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
+        @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'voidtools.Everything'; Name = 'Everything'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'ScooterSoftware.BeyondCompare.5'; Name = 'Beyond Compare 5'; Source = 'winget'; Scope = 'machine'; Extra = @('--locale', 'en') }
+        @{ Id = '9NT1R1C2HH7J'; Name = 'ChatGPT Classic'; Source = 'msstore'; Scope = ''; Extra = @() }
+        # The Codex desktop app is now named ChatGPT; OpenAI.Codex is the separate CLI.
+        @{ Id = 'OpenAI.ChatGPT'; Name = 'Codex desktop (ChatGPT)'; Source = 'winget'; Scope = ''; Extra = @('--installer-type', 'msix') }
+        @{ Id = 'OpenWhisperSystems.Signal'; Name = 'Signal'; Source = 'winget'; Scope = 'user'; Extra = @() }
+        @{ Id = 'OBSProject.OBSStudio'; Name = 'OBS Studio'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
+        @{ Id = 'Adobe.Acrobat.Reader.64-bit'; Name = 'Adobe Acrobat Reader'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        # Yodeck uses its signed official installer; WhatsApp must be the final app.
+        @{ Id = 'Yodeck.Player'; Name = 'Yodeck Player'; Source = 'yodeck' }
+        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
+    )
+}
+
+function Get-JindaSkippedApps {
+    param([string]$Path = (Join-Path $PSScriptRoot 'skip-apps.conf'))
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "App skip configuration is missing: $Path. Download the complete Jinda package."
+    }
+    $knownIds = @(Get-JindaSoftwarePackages | ForEach-Object { $_.Id }) + @('Discord.Discord', 'Microsoft.Teams')
+    $skipped = @()
+    $lineNumber = 0
+    foreach ($line in (Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop)) {
+        $lineNumber++
+        $id = ($line -replace '#.*$', '').Trim()
+        if (-not $id) { continue }
+        if ($id -notin $knownIds) {
+            throw "Unknown app ID '$id' in ${Path} at line $lineNumber. Use an ID from the commented app list."
+        }
+        if ($id -notin $skipped) { $skipped += $id }
+    }
+    return $skipped
+}
+
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -257,6 +312,20 @@ function Install-JindaSoftware {
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $false
+    # Validate the entire data file before updating WinGet or installing anything.
+    $skippedApps = @(Get-JindaSkippedApps)
+    $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {
+        if ($package.Id -in $skippedApps) {
+            Write-Host ''
+            Write-Host "$($package.Name): skipped by skip-apps.conf; existing installation left unchanged."
+        } else {
+            $package
+        }
+    })
+    if ($packages.Count -eq 0) {
+        Write-Host 'All apps are skipped by skip-apps.conf. No app or WinGet updates will run.'
+        return $false
+    }
     $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
     if (-not $winget) {
         throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
@@ -284,30 +353,6 @@ function Install-JindaSoftware {
         }
     }
 
-    # Scope is only forced when the manifest supports it; empty means installer default.
-    $packages = @(
-        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
-        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
-        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        # Current desktop OneNote, not the retired OneNote for Windows 10.
-        @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
-        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        # Temporarily disabled: Discord installation is not working reliably (user report).
-        # @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @() }
-        @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
-        @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @() }
-        @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        # Temporarily disabled: Microsoft Teams installation is not working reliably (user report).
-        # @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
-        @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'voidtools.Everything'; Name = 'Everything'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        # Yodeck uses its signed official installer; WhatsApp must be the final app.
-        @{ Name = 'Yodeck Player'; Source = 'yodeck' }
-        @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
-    )
     foreach ($package in $packages) {
         if ($package.Source -eq 'yodeck') {
             if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }

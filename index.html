@@ -28,7 +28,7 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>Windows 11 Pro inrichten: optioneel <strong>15 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
+    <p>Windows 11 Pro inrichten: optioneel <strong>21 apps</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Kies aan het begin <strong>apps installeren, Remote Desktop en WinRM: y/n</strong> (zo nodig ook het LAN). Daarna loopt alles zonder verdere vragen door.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
@@ -53,6 +53,7 @@
     <p class="copy-status" id="copy-repair-status" role="status" aria-live="polite"></p>
     <p>De scripts gebruiken administratorrechten en kiezen de nieuwste aanwezige stabiele PowerShell 7+. De Windows-configuratie gebruikt intern Windows PowerShell 5.1.</p>
     <h2>Apps</h2>
+    <p>Apps overslaan? Verwijder het eerste <code>#</code> bij de app in <a href="https://github.com/acurvers/jinda-operations/blob/main/skip-apps.conf">skip-apps.conf</a> en sla de wijziging op in GitHub. Dezelfde startopdracht gebruikt die keuze bij de volgende run; bestaande apps blijven staan.</p>
     <ul class="app-list">
       <li><img src="assets/icons/chrome.png" alt="" width="28" height="28"><span>Google Chrome</span></li>
       <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer</span></li>
@@ -69,6 +70,12 @@
       <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/vlc.png" alt="" width="28" height="28"><span>VLC</span></li>
       <li><img src="assets/icons/everything.ico" alt="" width="28" height="28"><span>Everything <small>(bestanden zoeken)</small></span></li>
+      <li><img src="assets/icons/beyondcompare.png" alt="" width="28" height="28"><span>Beyond Compare 5 <small>(proefversie; licentie apart)</small></span></li>
+      <li><img src="assets/icons/chatgpt-classic.png" alt="" width="28" height="28"><span>ChatGPT Classic</span></li>
+      <li><img src="assets/icons/codex.png" alt="" width="28" height="28"><span>Codex desktop <small>(nu ChatGPT)</small></span></li>
+      <li><img src="assets/icons/signal.png" alt="" width="28" height="28"><span>Signal</span></li>
+      <li><img src="assets/icons/obs-studio.png" alt="" width="28" height="28"><span>OBS Studio</span></li>
+      <li><img src="assets/icons/adobe-reader.ico" alt="" width="28" height="28"><span>Adobe Acrobat Reader</span></li>
       <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
       <li><img src="assets/icons/whatsapp.webp" alt="" width="28" height="28"><span>WhatsApp</span></li>
     </ul>

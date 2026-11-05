@@ -67,6 +67,36 @@
       "File": "everything.ico"
     },
     {
+      "Url": "https://www.scootersoftware.com/bc_icon.png",
+      "File": "beyondcompare.png",
+      "Retrieved": "2026-11-05"
+    },
+    {
+      "Url": "https://store-images.s-microsoft.com/image/apps.14785.14423064005243201.42399137-369b-40bb-b5be-ac2f079c41bf.b1d6d110-9d93-441f-ac20-2e04fd7dfe3c",
+      "File": "chatgpt-classic.png",
+      "Retrieved": "2026-11-05"
+    },
+    {
+      "Url": "https://store-images.s-microsoft.com/image/apps.25486.14314868180609929.d43036af-4b49-4b9b-9813-b08bb6f34d9d.2677a83c-7089-494b-8392-4863e281b6b9",
+      "File": "codex.png",
+      "Retrieved": "2026-11-05"
+    },
+    {
+      "Url": "https://signal.org/assets/images/favicon/favicon-32x32.png",
+      "File": "signal.png",
+      "Retrieved": "2026-11-05"
+    },
+    {
+      "Url": "https://obsproject.com/favicon-96x96.png",
+      "File": "obs-studio.png",
+      "Retrieved": "2026-11-05"
+    },
+    {
+      "Url": "https://get.adobe.com/reader/favicon.ico",
+      "File": "adobe-reader.ico",
+      "Retrieved": "2026-11-05"
+    },
+    {
       "Url": "https://www.yodeck.com/wp-content/uploads/2024/08/cropped-Favicon-32x32.png",
       "File": "yodeck.webp"
     }

@@ -291,7 +291,7 @@ function Invoke-JindaInitialization {
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
     $requiredScripts = @($config)
-    if ($options.InstallApps) { $requiredScripts = @($install, $config) }
+    if ($options.InstallApps) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
     foreach ($path in $requiredScripts) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Incomplete script package: $path is missing. Use the new startup command from the GitHub README."
