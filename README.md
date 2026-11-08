@@ -346,6 +346,13 @@ Bij apps = N wordt de nieuwste al aanwezige versie gebruikt; ontbreekt PowerShel
 dan stopt de configuratie vooraf met een duidelijke melding. WinRM = N laat ook
 dit endpoint ongewijzigd. De inrichting kan de WinRM-service herstarten.
 
+De WinRM-beveiligingsstap leest eerst `AllowUnencrypted` en `Basic`. Waarden die
+al `false` zijn, worden niet opnieuw geschreven: ook een overbodige schrijfopdracht
+kan op een Public-netwerk een fout opleveren. Alleen ingeschakelde waarden worden
+uitgezet en daarna opnieuw uitgelezen. Ontbrekende waarden, lees-/schrijffouten of
+een mislukte verificatie stoppen de configuratie met een foutmelding. De stap meldt
+de geverifieerde waarden in de console en het bestaande transcript.
+
 Verbind vanaf je beheer-pc expliciet met het PowerShell 7-endpoint:
 
 ~~~powershell

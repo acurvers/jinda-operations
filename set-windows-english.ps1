@@ -413,17 +413,30 @@ function Invoke-LanRemoteAccessSetup {
                 -Protocol TCP -LocalPort $Plan.WinRMPort -ErrorAction Stop
         }
         # Keep Windows authentication and encrypted WinRM messages, including over HTTP.
-        # Use direct WSMan requests rather than the WSMan: provider, which failed
-        # with a Public-network error after successful remoting setup on a client PC.
-        Set-WSManInstance -ResourceURI 'winrm/config/service' `
-            -ValueSet @{ AllowUnencrypted = 'false' } -ErrorAction Stop | Out-Null
-        Set-WSManInstance -ResourceURI 'winrm/config/service/auth' `
-            -ValueSet @{ Basic = 'false' } -ErrorAction Stop | Out-Null
+        # Even a redundant WSMan write can fail on a Public network after successful
+        # remoting setup. Read both settings first and only correct known deviations.
         $serviceSettings = Get-WSManInstance -ResourceURI 'winrm/config/service' -ErrorAction Stop
         $authSettings = Get-WSManInstance -ResourceURI 'winrm/config/service/auth' -ErrorAction Stop
+        if ([string]$serviceSettings.AllowUnencrypted -notin @('true', 'false') -or
+            [string]$authSettings.Basic -notin @('true', 'false')) {
+            throw 'WinRM security settings could not be determined. No security settings have been written.'
+        }
+        if ([string]$serviceSettings.AllowUnencrypted -ine 'false') {
+            Write-Host 'Disabling unencrypted WinRM messages (AllowUnencrypted was enabled).'
+            Set-WSManInstance -ResourceURI 'winrm/config/service' `
+                -ValueSet @{ AllowUnencrypted = 'false' } -ErrorAction Stop | Out-Null
+            $serviceSettings = Get-WSManInstance -ResourceURI 'winrm/config/service' -ErrorAction Stop
+        }
+        if ([string]$authSettings.Basic -ine 'false') {
+            Write-Host 'Disabling WinRM Basic authentication (Basic was enabled).'
+            Set-WSManInstance -ResourceURI 'winrm/config/service/auth' `
+                -ValueSet @{ Basic = 'false' } -ErrorAction Stop | Out-Null
+            $authSettings = Get-WSManInstance -ResourceURI 'winrm/config/service/auth' -ErrorAction Stop
+        }
         if ([string]$serviceSettings.AllowUnencrypted -ine 'false' -or [string]$authSettings.Basic -ine 'false') {
             throw 'WinRM security verification failed: AllowUnencrypted and Basic must both be disabled.'
         }
+        Write-Host 'WinRM security verified: AllowUnencrypted=False; Basic=False. Settings already correct were left unchanged.'
         Test-WSMan -ComputerName localhost -ErrorAction Stop | Out-Null
     }
     # Enable the scoped RDP rules before touching the listener. Do not restart
