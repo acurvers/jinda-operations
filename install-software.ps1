@@ -3,16 +3,25 @@
 .SYNOPSIS
 Install Jinda apps, Windows OpenSSH and the official Yodeck Windows installer.
 .DESCRIPTION
-First updates WinGet (Microsoft App Installer) if a newer version is available.
+Updates WinGet (Microsoft App Installer) before installing any selected WinGet apps.
 Installs for all users where supported. Existing WinGet apps are updated when
 a newer version is available from the selected source.
 Requests administrator privileges and selects the latest installed stable PowerShell 7+.
 Package and source agreements are accepted automatically.
 A Chrome failure produces a warning and installation continues.
 Failures for all other apps stop installation.
+.PARAMETER EnableOpenSSH
+Opt in to installing OpenSSH client/server and enabling the SSH service and LAN firewall rule.
+Without this switch, existing OpenSSH installation and settings are left unchanged.
+.PARAMETER SkipApps
+Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-only installation.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
-param([Parameter(DontShow = $true)][switch]$RuntimeReady)
+param(
+    [switch]$EnableOpenSSH,
+    [switch]$SkipApps,
+    [Parameter(DontShow = $true)][switch]$RuntimeReady
+)
 
 # BEGIN shared runtime (kept identical in all entry scripts).
 function Test-JindaAdministrator {
@@ -366,7 +375,7 @@ function Get-JindaSkippedApps {
 
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param()
+    param([switch]$EnableOpenSSH, [switch]$SkipApps)
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
@@ -374,6 +383,11 @@ function Install-JindaSoftware {
     # Validate the entire data file before updating WinGet or installing anything.
     $skippedApps = @(Get-JindaSkippedApps)
     $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {
+        if ($package.Id -eq 'Windows.OpenSSH' -and -not $EnableOpenSSH) {
+            Write-Host 'OpenSSH was not selected; existing installation and settings are unchanged.'
+            continue
+        }
+        if ($SkipApps -and $package.Id -ne 'Windows.OpenSSH') { continue }
         if ($package.Id -in $skippedApps) {
             Write-Host ''
             Write-Host "$($package.Name): skipped by skip-apps.conf; existing installation left unchanged."
@@ -382,16 +396,20 @@ function Install-JindaSoftware {
         }
     })
     if ($packages.Count -eq 0) {
-        Write-Host 'All apps are skipped by skip-apps.conf. No app or WinGet updates will run.'
+        Write-Host 'No software components selected. No app, OpenSSH or WinGet changes will run.'
         return $false
     }
-    $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
-    if (-not $winget) {
-        throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
+    $needsWinGet = @($packages | Where-Object { $_.Source -in @('winget', 'msstore') }).Count -gt 0
+    $winget = $null
+    if ($needsWinGet) {
+        $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+        if (-not $winget) {
+            throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
+        }
     }
 
     $restartNeeded = $false
-    if ($PSCmdlet.ShouldProcess('WinGet (Microsoft.AppInstaller)', 'Upgrade if a newer version is available')) {
+    if ($needsWinGet -and $PSCmdlet.ShouldProcess('WinGet (Microsoft.AppInstaller)', 'Upgrade if a newer version is available')) {
         Write-Host ''
         Write-Host 'Checking for a WinGet update and installing it if available...'
         # Microsoft-supported self-update; no extra PowerShell module is required.
@@ -462,8 +480,11 @@ function Install-JindaSoftware {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            if (Install-JindaSoftware) { return 3010 }
+        $scriptArguments = @()
+        if ($EnableOpenSSH) { $scriptArguments += '-EnableOpenSSH' }
+        if ($SkipApps) { $scriptArguments += '-SkipApps' }
+        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
+            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps) { return 3010 }
             return 0
         }
         exit $exitCode

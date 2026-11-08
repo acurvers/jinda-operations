@@ -297,27 +297,49 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'installs OpenSSH once through Windows features instead of WinGet' {
-        Install-JindaSoftware | Should Be $false
+        Install-JindaSoftware -EnableOpenSSH | Should Be $false
         Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
         (@($script:wingetCalls | ForEach-Object { $_[2] }) -contains 'Windows.OpenSSH') | Should Be $false
     }
 
     It 'skips OpenSSH setup when selected in skip-apps.conf' {
         Mock Get-JindaSkippedApps { @('Windows.OpenSSH') }
-        Install-JindaSoftware | Should Be $false
+        Install-JindaSoftware -EnableOpenSSH | Should Be $false
         Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
     }
 
     It 'propagates an OpenSSH restart requirement' {
         Mock Install-JindaOpenSSH { $true }
-        Install-JindaSoftware | Should Be $true
+        Install-JindaSoftware -EnableOpenSSH | Should Be $true
         $script:wingetCalls.Count | Should Be 20
     }
 
     It 'stops on an OpenSSH installation failure before the next app' {
         Mock Install-JindaOpenSSH { throw 'OpenSSH installation failed' }
-        { Install-JindaSoftware } | Should Throw 'OpenSSH installation failed'
+        { Install-JindaSoftware -EnableOpenSSH } | Should Throw 'OpenSSH installation failed'
         $script:wingetCalls.Count | Should Be 3
+    }
+
+    It 'leaves OpenSSH untouched unless explicitly enabled' {
+        Install-JindaSoftware | Should Be $false
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+        $script:wingetCalls.Count | Should Be 20
+    }
+
+    It 'installs only OpenSSH without requiring, updating or repairing WinGet when apps are skipped' {
+        Mock Get-Command { throw 'WinGet must not be required for SSH-only setup' } -ParameterFilter { $Name -eq 'winget.exe' }
+        Install-JindaSoftware -EnableOpenSSH -SkipApps | Should Be $false
+        Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        $script:wingetCalls.Count | Should Be 0
+        $script:wingetUpgradeCalls.Count | Should Be 0
+    }
+
+    It 'respects the skip file even when SSH is the only selected component' {
+        Mock Get-JindaSkippedApps { @('Windows.OpenSSH') }
+        Install-JindaSoftware -EnableOpenSSH -SkipApps | Should Be $false
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-Command -Times 0 -Exactly -Scope It -ParameterFilter { $Name -eq 'winget.exe' }
     }
 
     It 'propagates a Yodeck restart requirement' {
@@ -341,10 +363,43 @@ Describe 'Complete installation preview' {
         Mock Invoke-WebRequest { throw 'Unexpected download in WhatIf' }
         Mock Start-Process { throw 'Unexpected installer in WhatIf' }
         Mock New-Item { throw 'Unexpected write in WhatIf' }
-        Install-JindaSoftware -WhatIf | Should Be $false
+        Mock Get-WindowsCapability { throw 'Unexpected capability access in WhatIf' }
+        Install-JindaSoftware -EnableOpenSSH -WhatIf | Should Be $false
         Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
         Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-WindowsCapability -Times 0 -Exactly -Scope It
         $script:wingetCalls.Count | Should Be 0
+    }
+}
+
+# Run the installer entry-point statements with mocked work, never exit the test host.
+$installerAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path (Split-Path -Parent $PSScriptRoot) 'install-software.ps1'), [ref]$null, [ref]$null)
+$installerTry = $installerAst.EndBlock.Statements[-1].Clauses[0].Item2.Statements[0]
+$installerBody = ($installerTry.Body.Statements | Where-Object { $_ -isnot [Management.Automation.Language.ExitStatementAst] } | ForEach-Object { $_.Extent.Text }) -join "`n"
+$script:installerEntry = [scriptblock]::Create($installerBody.Replace('$PSCommandPath', "'C:\Test Folder\install-software.ps1'"))
+
+Describe 'Installer entry point preserves the OpenSSH choice' {
+    BeforeEach {
+        Mock Invoke-JindaManagedScript { & $Work }
+        Mock Install-JindaSoftware { $false }
+    }
+
+    It 'forwards both opt-in and app-skip flags to runtime relaunch and installation' {
+        $EnableOpenSSH = $true
+        $SkipApps = $true
+        & $script:installerEntry
+        Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($ScriptArguments -join ' ') -eq '-EnableOpenSSH -SkipApps'
+        }
+        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { $EnableOpenSSH -and $SkipApps }
+    }
+
+    It 'keeps direct installation opt-out by default' {
+        $EnableOpenSSH = $false
+        $SkipApps = $false
+        & $script:installerEntry
+        Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter { $ScriptArguments.Count -eq 0 }
+        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { -not $EnableOpenSSH -and -not $SkipApps }
     }
 }

@@ -17,6 +17,9 @@ Ask (default), Yes or No. Asks at startup whether to download and install apps.
 Ask (default), Yes or No. Enables Remote Desktop for the selected LAN and WireGuard client.
 .PARAMETER PowerShellRemoting
 Ask (default), Yes or No. Enables Windows PowerShell remoting (WinRM).
+.PARAMETER OpenSSH
+Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on private/domain local subnets.
+The question defaults to No and is independent of the apps choice.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
 #>
@@ -28,6 +31,7 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallApps = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
     [string]$LanIPAddress,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
@@ -259,15 +263,16 @@ function Select-JindaLanAddress {
 function Get-JindaSetupOptions {
     param(
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
-        [string]$PowerShellRemoting = 'Ask', [string]$LanIPAddress
+        [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask', [string]$LanIPAddress
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
+    $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH client/server and enable SSH on private/domain local subnets? (N = skip; leave existing settings unchanged)' -Choice $OpenSSH
     $address = ''
     if ($rdp -or $winrm) { $address = Select-JindaLanAddress -Address $LanIPAddress }
-    [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; LanIPAddress = $address }
+    [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; OpenSSH = $ssh; LanIPAddress = $address }
 }
 
 function Invoke-JindaInitialization {
@@ -279,6 +284,7 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallApps = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
         [string]$LanIPAddress
     )
 
@@ -286,12 +292,12 @@ function Invoke-JindaInitialization {
     if (-not $PSCmdlet.ShouldProcess('This PC', 'Install Jinda software and configure Windows')) { return 0 }
 
     # The start command downloads one complete source archive. Children never prompt.
-    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
+    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress
     $folder = $PSScriptRoot
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
     $requiredScripts = @($config)
-    if ($options.InstallApps) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
+    if ($options.InstallApps -or $options.OpenSSH) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
     foreach ($path in $requiredScripts) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Incomplete script package: $path is missing. Use the new startup command from the GitHub README."
@@ -300,10 +306,13 @@ function Invoke-JindaInitialization {
     Write-Host "Using scripts from GitHub package: $folder"
 
     $installCode = 0
-    if ($options.InstallApps) {
-        if ($RepairWinGet) { Repair-JindaWinGet }
-        Write-Host 'Step 1/2: installing software.'
-        $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -NonInteractive
+    if ($options.InstallApps -or $options.OpenSSH) {
+        if ($RepairWinGet -and $options.InstallApps) { Repair-JindaWinGet }
+        $installArguments = @()
+        if ($options.OpenSSH) { $installArguments += '-EnableOpenSSH' }
+        if (-not $options.InstallApps) { $installArguments += '-SkipApps' }
+        Write-Host 'Step 1/2: installing the selected software components.'
+        $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive
         if ($installCode -notin @(0, 3010)) { throw "Software installation failed (exit code $installCode). Configuration has not started." }
     }
     else { Write-Host 'Software installation and any WinGet repair have been skipped as requested.' }
@@ -324,11 +333,11 @@ function Invoke-JindaInitialization {
 # Dot-sourcing defines functions only, for tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting)
+        $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -LanIPAddress $LanIPAddress
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress
         }
         exit $exitCode
     }

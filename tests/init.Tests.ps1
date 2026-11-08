@@ -7,7 +7,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initExitCodes = @(0, 0)
         Mock Get-JindaSetupOptions {
             $script:initEvents.Add('choices')
-            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; LanIPAddress = '' }
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false; LanIPAddress = '' }
         }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
@@ -35,6 +35,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches[0].Executable | Should Match 'WindowsPowerShell'
         $script:initLaunches[1].Executable | Should Be 'C:\Program Files\PowerShell\7\pwsh.exe'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
+        ($script:initLaunches[0].Arguments -contains '-EnableOpenSSH') | Should Be $false
         foreach ($launch in $script:initLaunches) {
             [bool]$launch.Elevate | Should Be $false
             [bool]$launch.NonInteractive | Should Be $true
@@ -114,7 +115,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'skips installer validation, execution and repair when apps are declined' {
         Mock Get-JindaSetupOptions {
-            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $true; PowerShellRemoting = $false; LanIPAddress = '10.20.30.40' }
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $true; PowerShellRemoting = $false; OpenSSH = $false; LanIPAddress = '10.20.30.40' }
         }
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
         $script:initLaunches.Count | Should Be 1
@@ -126,9 +127,39 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
     }
 
+    It 'can enable only SSH without app installation or WinGet repair' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }
+        }
+        Invoke-JindaInitialization -RepairWinGet | Should Be 0
+        $script:initLaunches.Count | Should Be 2
+        $script:initLaunches[0].Path | Should Match 'install-software.ps1$'
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -SkipApps'
+        ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+        Assert-MockCalled Test-Path -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*skip-apps.conf' }
+    }
+
+    It 'passes SSH opt-in to the installer alongside ordinary apps' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }
+        }
+        Invoke-JindaInitialization | Should Be 0
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH'
+    }
+
+    It 'rejects a missing installer before an SSH-only run' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }
+        }
+        Mock Test-Path { $LiteralPath -notlike '*install-software.ps1' }
+        { Invoke-JindaInitialization } | Should Throw 'Incomplete script package'
+        $script:initLaunches.Count | Should Be 0
+    }
+
     It 'passes both remote choices and the selected LAN to configuration' {
         Mock Get-JindaSetupOptions {
-            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $true; PowerShellRemoting = $true; LanIPAddress = '10.20.30.40' }
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $true; PowerShellRemoting = $true; OpenSSH = $false; LanIPAddress = '10.20.30.40' }
         }
         Invoke-JindaInitialization | Should Be 0
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -EnableWinRM -LanIPAddress 10.20.30.40'
@@ -169,12 +200,14 @@ Describe 'Initialization entry point forwards the repair switch' {
         $InstallApps = 'No'
         $RemoteDesktop = 'Yes'
         $PowerShellRemoting = 'No'
+        $OpenSSH = 'Yes'
         $LanIPAddress = '10.20.30.40'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
             $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
             $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
+            ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
             $ScriptArguments -contains '10.20.30.40'
         }
         Assert-MockCalled Invoke-JindaInitialization -Times 0 -Exactly -Scope It
@@ -183,15 +216,18 @@ Describe 'Initialization entry point forwards the repair switch' {
     It 'keeps the switch through a PowerShell runtime change' {
         Mock Get-JindaCurrentPowerShell { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
         $RepairWinGet = $true
+        $OpenSSH = 'No'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
-            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet'
+            -not $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
+            ($ScriptArguments -join ' ') -match '-OpenSSH No'
         }
     }
 
     It 'passes the switch into initialization once already elevated' {
         $RepairWinGet = $true
+        $OpenSSH = 'Yes'
         & $script:initEntry
-        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter { $RepairWinGet }
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter { $RepairWinGet -and $OpenSSH -eq 'Yes' }
     }
 }

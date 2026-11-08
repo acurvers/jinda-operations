@@ -36,19 +36,26 @@ hun eigen taalinstelling.
 
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
-| Download and install apps? | Ja | Geen apps downloaden/installeren en geen WinGet-herstel |
+| Download and install apps? | Ja | Geen gewone apps downloaden/installeren en geen WinGet-herstel; OpenSSH heeft een eigen keuze |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
+| Install OpenSSH client/server and enable SSH on private/domain local subnets? | Nee | OpenSSH-installatie, service en firewall blijven ongemoeid |
 
-Bij een remote-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
+Bij een RDP/WinRM-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
 Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vragen.
 De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
 
 Voor vooraf ingevulde keuzes kun je `-InstallApps Yes|No`, `-RemoteDesktop Yes|No`,
-`-PowerShellRemoting Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
+`-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
 init meegeven. Zonder deze parameters gebruikt init `Ask`. Gebruik bij meerdere
 netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
+
+OpenSSH heeft een eigen keuze, onafhankelijk van apps installeren, RDP en WinRM.
+Met apps **N** en OpenSSH **Y** worden alleen de SSH-onderdelen geinstalleerd;
+WinGet en de andere apps worden overgeslagen. Daarna volgt de normale Windows-configuratie.
+SSH gebruikt de bestaande firewallafbakening `LocalSubnet` op Private/Domain;
+de aparte IPv4/LAN-keuze is alleen nodig voor RDP en WinRM.
 
 ## Optioneel WinGet-herstel
 
@@ -95,6 +102,43 @@ en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een ander
 app stopt de installatie en start de configuratie niet. Een software-exitcode
 3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
 doorgegeven. Init start Windows niet zelf opnieuw op.
+
+## Lokale wachtwoorden verlopen niet
+
+Het configuratiescript stelt de maximale wachtwoordleeftijd voor lokale
+Windows-accounts in op **onbeperkt**, met `net.exe accounts /maxpwage:unlimited`.
+Dit geldt voor bestaande en later aangemaakte lokale accounts, dus ook voor
+het balieaccount en het lokale beheeraccount. De stap draait bij iedere normale
+configuratierun, ook als apps installeren wordt overgeslagen. Opnieuw uitvoeren
+stelt dezelfde waarde in; er komt geen extra taak of software bij.
+
+Er worden geen wachtwoorden veranderd, accounts geactiveerd, vergrendelingen
+opgeheven of andere wachtwoord-/lockoutregels aangepast. Deze instelling gaat
+alleen over periodiek vervallen door ouderdom; een verplichte wachtwoordwijziging
+bij de volgende aanmelding is een afzonderlijke accountinstelling. Domein- en
+cloudwachtwoorden vallen hier niet onder. Centraal beleid kan de lokale
+instelling later opnieuw overschrijven.
+
+De uitvoer en het bestaande transcript tonen de accountpolicy na het toepassen.
+Bij een fout stopt configuratie met een concrete melding. `-WhatIf` past niets aan.
+De wijziging wordt pas actief nadat deze scriptversie op de doel-pc is uitgevoerd.
+
+Alleen controleren vanuit een gewone PowerShell (geen wachtwoorden in de uitvoer):
+
+~~~powershell
+net user PC
+Get-LocalUser -Name 'PC' | Select-Object Name, Enabled, PasswordLastSet, PasswordExpires
+net accounts
+~~~
+
+`net user PC` toont onder **Password expires** de vervaldatum of **Never**;
+`Get-LocalUser` toont die datum als `PasswordExpires` (leeg als er geen datum is).
+Een verstreken vervaldatum wees op verlopen geldigheid. `Enabled` alleen zegt
+daar niets over. `net accounts` toont de algemene maximumleeftijd (zoals de
+eerdere 42 dagen), niet de vervaldatum van een specifiek account. Na herstel
+tonen deze commando's de huidige toestand, niet de eerdere storing.
+
+Bron: [Microsoft: lokale account- en wachtwoordpolicy met net accounts](https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/net-commands-on-operating-systems).
 
 ## Browserfavorieten
 
@@ -160,7 +204,7 @@ ook deze WinGet-update overgeslagen.
 | Chrome | Google.Chrome / winget | Alle gebruikers |
 | TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
 | PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
-| OpenSSH client en server | Windows optional features / `Windows.OpenSSH` in skip-apps.conf | Alle gebruikers; SSH-service en LAN-firewallregel |
+| OpenSSH client en server (eigen y/n-keuze; standaard Nee) | Windows optional features / `Windows.OpenSSH` in skip-apps.conf | Alle gebruikers; SSH-service en LAN-firewallregel |
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
 | Notepad++ | Notepad++.Notepad++ / winget | Alle gebruikers |
@@ -200,8 +244,13 @@ en `sshd_config` blijft behouden; de standaardpoort is 22. Bij bestaande afwijke
 SSH-poorten blijft die configuratie gelden, maar deze firewallregel betreft alleen 22.
 Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
 nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
-Apps overslaan bij de start, of `Windows.OpenSSH` activeren in `skip-apps.conf`,
-slaat deze hele stap over. De RDP/WinRM-keuzes regelen afzonderlijke protocollen.
+Alleen **Y** bij de OpenSSH-vraag voert deze stap uit. **N** slaat hem over en
+deactiveert geen eerder ingerichte SSH-service. `Windows.OpenSSH` activeren in
+`skip-apps.conf` slaat de stap ook bij **Y** over, met een melding in de uitvoer.
+Rechtstreeks `install-software.ps1` uitvoeren installeert standaard geen OpenSSH;
+gebruik daarvoor expliciet `-EnableOpenSSH`, eventueel met `-SkipApps` voor alleen SSH.
+Het deelscript stelt geen vragen; de y/n-vraag staat vooraf in `init.ps1`.
+De RDP/WinRM-keuzes regelen afzonderlijke protocollen.
 Bron: [Microsoft: OpenSSH voor Windows](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
 
 ChatGPT Classic en de Codex-desktopapp zijn aparte apps. De huidige

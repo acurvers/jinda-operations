@@ -12,6 +12,7 @@ Selected remote access and IPv4 ping allow the LAN and WireGuard client 10.6.0.3
 These address restrictions are retained when the script is run again.
 Adds Jinda Operations as a managed bookmark in Chrome and Edge for all Windows users.
 Personal bookmarks are unchanged; Edge excludes profiles signed in with a personal Microsoft account.
+Disables age-based password expiration for existing and future local Windows accounts.
 .PARAMETER Keyboard
 US (default) or USInternational. Regional date and number formats are preserved.
 .PARAMETER EnableRemoteDesktop
@@ -676,6 +677,28 @@ function Set-JindaBrowserBookmarks {
 }
 # END managed browser bookmarks.
 
+function Set-JindaLocalPasswordAgePolicy {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Local Windows account policy', 'Set maximum password age to unlimited')) { return }
+    if (-not (Test-JindaAdministrator)) { throw 'Local password policy setup requires administrator privileges.' }
+    $ErrorActionPreference = 'Stop'
+    $PSNativeCommandUseErrorActionPreference = $false
+    $net = Get-Command -Name 'net.exe' -CommandType Application -ErrorAction Stop
+    # Change only maximum password age, for this PC (no /DOMAIN). This also
+    # covers future local accounts without a recurring task or per-user flags.
+    # https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/net-commands-on-operating-systems
+    & $net.Source accounts /maxpwage:unlimited | Out-Host
+    $policyExitCode = $LASTEXITCODE
+    if ($policyExitCode -ne 0) { throw "Could not disable local password expiration (net.exe exit code $policyExitCode)." }
+    Write-Host 'Local Windows passwords no longer expire because of their age.'
+    Write-Host 'Current local account policy (centrally managed policies can override local settings):'
+    & $net.Source accounts | Out-Host
+    $queryExitCode = $LASTEXITCODE
+    if ($queryExitCode -ne 0) { throw "Password policy was applied, but displaying the current policy failed (net.exe exit code $queryExitCode)." }
+}
+
 function Invoke-JindaConfiguration {
     param(
         [string]$ScriptPath, [string]$Keyboard,
@@ -697,6 +720,8 @@ function Invoke-JindaConfiguration {
         $remotePlan = Get-LanRemoteAccessPlan -Address $LanIPAddress -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM
     }
     Set-JindaWindowsEnglish -Keyboard $Keyboard
+    Write-Host ''
+    Set-JindaLocalPasswordAgePolicy
     Write-Host ''
     Set-JindaBrowserBookmarks
     if ($remotePlan) {
