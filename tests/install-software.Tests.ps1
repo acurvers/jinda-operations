@@ -31,6 +31,7 @@ Describe 'All requested Jinda applications' {
         $script:throwChrome = $false
         Mock Get-JindaSkippedApps { @() }
         Mock Install-JindaYodeck { $script:appOrder.Add('Yodeck'); $false }
+        Mock Install-JindaOpenSSH { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
     }
@@ -293,6 +294,30 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 20
         ($script:appOrder | Select-Object -Last 10) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
+    }
+
+    It 'installs OpenSSH once through Windows features instead of WinGet' {
+        Install-JindaSoftware | Should Be $false
+        Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
+        (@($script:wingetCalls | ForEach-Object { $_[2] }) -contains 'Windows.OpenSSH') | Should Be $false
+    }
+
+    It 'skips OpenSSH setup when selected in skip-apps.conf' {
+        Mock Get-JindaSkippedApps { @('Windows.OpenSSH') }
+        Install-JindaSoftware | Should Be $false
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+    }
+
+    It 'propagates an OpenSSH restart requirement' {
+        Mock Install-JindaOpenSSH { $true }
+        Install-JindaSoftware | Should Be $true
+        $script:wingetCalls.Count | Should Be 20
+    }
+
+    It 'stops on an OpenSSH installation failure before the next app' {
+        Mock Install-JindaOpenSSH { throw 'OpenSSH installation failed' }
+        { Install-JindaSoftware } | Should Throw 'OpenSSH installation failed'
+        $script:wingetCalls.Count | Should Be 3
     }
 
     It 'propagates a Yodeck restart requirement' {

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Install Jinda apps using WinGet and the official Yodeck Windows installer.
+Install Jinda apps, Windows OpenSSH and the official Yodeck Windows installer.
 .DESCRIPTION
 First updates WinGet (Microsoft App Installer) if a newer version is available.
 Installs for all users where supported. Existing WinGet apps are updated when
@@ -250,12 +250,71 @@ function Install-JindaYodeck {
     }
 }
 
+function Install-JindaOpenSSH {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    # Use Microsoft's in-box features, serviced by Windows Update, not a preview MSI.
+    # https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
+    if (-not $PSCmdlet.ShouldProcess('Windows OpenSSH client and server', 'Install and enable SSH on private/domain local subnets (TCP 22)')) { return $false }
+    $ErrorActionPreference = 'Stop'
+    $restartNeeded = $false
+    foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
+        $capability = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+        if (-not $capability) { throw "Windows does not offer the required capability: $name" }
+        if ($capability.State -eq 'Installed') {
+            Write-Host "$name is already installed."
+            continue
+        }
+        if ($capability.State -ne 'NotPresent') {
+            throw "$name has state $($capability.State). Complete any pending Windows servicing or restart, then run setup again."
+        }
+        Write-Host "Installing $name using Windows optional features..."
+        # Add-WindowsCapability reports RestartNeeded; it has no -NoRestart switch.
+        $result = Add-WindowsCapability -Online -Name $name -ErrorAction Stop
+        if ($result.RestartNeeded) { $restartNeeded = $true }
+        $installed = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
+        if (-not $result.RestartNeeded -and $installed.State -ne 'Installed') {
+            throw "$name was not installed successfully (state: $($installed.State))."
+        }
+    }
+
+    # The Windows feature normally creates a broad rule. Restrict that same rule
+    # before starting sshd; do not create a second rule alongside an unrestricted one.
+    $ruleName = 'OpenSSH-Server-In-TCP'
+    $rule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+    $ruleSettings = @{
+        Enabled = 'True'; Direction = 'Inbound'; Action = 'Allow'
+        Protocol = 'TCP'; LocalPort = 22; RemoteAddress = 'LocalSubnet'
+        Profile = @('Private', 'Domain')
+    }
+    if ($rule) {
+        Set-NetFirewallRule -Name $ruleName @ruleSettings -ErrorAction Stop | Out-Null
+    } else {
+        New-NetFirewallRule -Name $ruleName -DisplayName 'OpenSSH Server (sshd)' @ruleSettings -ErrorAction Stop | Out-Null
+    }
+    if ($restartNeeded) {
+        Write-Warning 'OpenSSH requires a restart. Restart Windows and run setup again to finish enabling the SSH service.'
+        return $true
+    }
+    $service = Get-Service -Name sshd -ErrorAction Stop
+    Set-Service -Name sshd -StartupType Automatic -ErrorAction Stop
+    if ($service.Status -ne 'Running') { Start-Service -Name sshd -ErrorAction Stop }
+    if ((Get-Service -Name sshd -ErrorAction Stop).Status -ne 'Running') {
+        throw 'OpenSSH is installed, but the sshd service is not running.'
+    }
+    Write-Host 'OpenSSH client and server are available. SSH starts with Windows; TCP 22 is allowed from local subnets on Private/Domain networks.'
+    Write-Host 'Use an existing Windows account and its password or configured SSH key. Existing SSH configuration and keys are preserved.'
+    return $false
+}
+
 function Get-JindaSoftwarePackages {
     # Scope is only forced when the manifest supports it; empty means installer default.
     return @(
         @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
+        @{ Id = 'Windows.OpenSSH'; Name = 'OpenSSH client and server'; Source = 'windows-capability' }
         @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         # Current desktop OneNote, not the retired OneNote for Windows 10.
         @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
@@ -354,6 +413,10 @@ function Install-JindaSoftware {
     }
 
     foreach ($package in $packages) {
+        if ($package.Source -eq 'windows-capability') {
+            if (Install-JindaOpenSSH -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
+            continue
+        }
         if ($package.Source -eq 'yodeck') {
             if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
             continue

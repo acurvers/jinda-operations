@@ -160,6 +160,7 @@ ook deze WinGet-update overgeslagen.
 | Chrome | Google.Chrome / winget | Alle gebruikers |
 | TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
 | PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
+| OpenSSH client en server | Windows optional features / `Windows.OpenSSH` in skip-apps.conf | Alle gebruikers; SSH-service en LAN-firewallregel |
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
 | Notepad++ | Notepad++.Notepad++ / winget | Alle gebruikers |
@@ -182,6 +183,26 @@ ook deze WinGet-update overgeslagen.
 | WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 
 WhatsApp wordt als laatste app geprobeerd, na Yodeck. Bij een fout stopt het script nog steeds en start de configuratie niet.
+
+OpenSSH wordt via de ingebouwde Windows-onderdelen geinstalleerd, met
+`Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0` en
+hetzelfde commando voor `OpenSSH.Server~~~~0.0.1.0`. Reeds aanwezige onderdelen
+worden overgeslagen; verdere updates lopen via Windows Update. De service `sshd`
+wordt gestart en op automatisch starten gezet. De standaardfirewallregel
+`OpenSSH-Server-In-TCP` wordt begrensd tot TCP 22, `LocalSubnet` en de profielen
+Private/Domain, voordat de service start. Openbare netwerkprofielen worden niet
+opengesteld of gewijzigd. Andere bestaande firewallregels blijven ongemoeid;
+die kunnen eventueel afzonderlijk toegang toestaan.
+
+Gebruik een bestaand Windows-account met wachtwoord (geen Windows Hello-pincode)
+of een al ingestelde SSH-sleutel. Er worden geen accounts of sleutels toegevoegd
+en `sshd_config` blijft behouden; de standaardpoort is 22. Bij bestaande afwijkende
+SSH-poorten blijft die configuratie gelden, maar deze firewallregel betreft alleen 22.
+Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
+nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
+Apps overslaan bij de start, of `Windows.OpenSSH` activeren in `skip-apps.conf`,
+slaat deze hele stap over. De RDP/WinRM-keuzes regelen afzonderlijke protocollen.
+Bron: [Microsoft: OpenSSH voor Windows](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
 
 ChatGPT Classic en de Codex-desktopapp zijn aparte apps. De huidige
 [Codex-desktopapp heet ChatGPT](https://learn.chatgpt.com/docs/windows/windows-app)
