@@ -392,22 +392,31 @@ function Get-JindaSoftwarePackages {
 }
 
 function Get-JindaSkippedApps {
-    param([string]$Path = (Join-Path $PSScriptRoot 'skip-apps.conf'))
+    param(
+        [string]$Path = (Join-Path $PSScriptRoot 'skip-apps.conf'),
+        [string]$LocalPath = 'C:\Support\skip-apps.conf'
+    )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         throw "App skip configuration is missing: $Path. Download the complete Jinda package."
     }
+    $configPaths = @($Path)
+    if (Test-Path -LiteralPath $LocalPath -ErrorAction Stop) {
+        $configPaths += $LocalPath
+    }
     $knownIds = @(Get-JindaSoftwarePackages | ForEach-Object { $_.Id }) + @('Discord.Discord', 'Microsoft.Teams')
     $skipped = @()
-    $lineNumber = 0
-    foreach ($line in (Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop)) {
-        $lineNumber++
-        $id = ($line -replace '#.*$', '').Trim()
-        if (-not $id) { continue }
-        if ($id -notin $knownIds) {
-            throw "Unknown app ID '$id' in ${Path} at line $lineNumber. Use an ID from the commented app list."
+    foreach ($configPath in $configPaths) {
+        $lineNumber = 0
+        foreach ($line in (Get-Content -LiteralPath $configPath -Encoding UTF8 -ErrorAction Stop)) {
+            $lineNumber++
+            $id = ($line -replace '#.*$', '').Trim()
+            if (-not $id) { continue }
+            if ($id -notin $knownIds) {
+                throw "Unknown app ID '$id' in ${configPath} at line $lineNumber. Use an ID from the commented app list."
+            }
+            if ($id -notin $skipped) { $skipped += $id }
         }
-        if ($id -notin $skipped) { $skipped += $id }
     }
     return $skipped
 }
@@ -419,7 +428,7 @@ function Install-JindaSoftware {
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $false
-    # Validate the entire data file before updating WinGet or installing anything.
+    # Validate the package list and any machine-specific list before installing.
     $skippedApps = @(Get-JindaSkippedApps)
     $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {
         if ($package.Id -eq 'Windows.OpenSSH' -and -not $EnableOpenSSH) {

@@ -192,11 +192,12 @@ Yodeck heeft de vaste sleutel `Yodeck.Player`. Lege regels en tekst na `#` worde
 genegeerd; hoofdletters maken niet uit. Een onbekende ID of ontbrekend bestand
 stopt de installatie met een foutmelding voordat WinGet iets bijwerkt.
 
-Wijzig het bestand in GitHub op `main` voor alle volgende runs van de bestaande
-oneliner. Voor een losse pc kun je het complete pakket uitpakken, het bestand
-naast `install-software.ps1` aanpassen en daarna `init.ps1` starten.
-Het bestand wordt altijd uit hetzelfde pakket gelezen, niet uit de huidige werkmap.
-Als alle apps zijn overgeslagen, wordt ook de WinGet-update overgeslagen.
+Voor een uitzondering op één pc maak je `C:\Support\skip-apps.conf` aan.
+Zet daarin één app-ID per regel, bijvoorbeeld `TeamViewer.TeamViewer`. De
+installer leest die lijst bij elke start en voegt de lokale keuzes toe aan
+de lijst uit het downloadpakket. Zonder lokaal bestand geldt de lijst uit
+het pakket. Als alle apps zijn overgeslagen, wordt ook de WinGet-update
+overgeslagen.
 
 ### Installatielijst
 

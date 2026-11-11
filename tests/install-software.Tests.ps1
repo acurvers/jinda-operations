@@ -210,11 +210,11 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'skips configured apps and their related extension or direct-install steps' {
-        Mock Get-JindaSkippedApps { @('Google.Chrome', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', 'Yodeck.Player', '9NKSQGP7F2NH') }
+        Mock Get-JindaSkippedApps { @('Google.Chrome', 'TeamViewer.TeamViewer', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', 'Yodeck.Player', '9NKSQGP7F2NH') }
         Install-JindaSoftware | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
-        $ids.Count | Should Be 16
-        foreach ($id in @('Google.Chrome', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', '9NKSQGP7F2NH')) {
+        $ids.Count | Should Be 15
+        foreach ($id in @('Google.Chrome', 'TeamViewer.TeamViewer', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', '9NKSQGP7F2NH')) {
             ($ids -contains $id) | Should Be $false
         }
         $ids[-1] | Should Be 'Adobe.Acrobat.Reader.64-bit'
