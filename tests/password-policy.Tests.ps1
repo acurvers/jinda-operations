@@ -6,6 +6,32 @@ function Invoke-JindaFakeAccountNet {
     Write-Output 'Simulated local account policy output'
 }
 
+Describe 'Local Windows blank-password policy' {
+    BeforeEach {
+        Mock Test-JindaAdministrator { $true }
+        Mock New-ItemProperty {}
+        Mock Get-ItemProperty { [pscustomobject]@{ LimitBlankPasswordUse = 0 } }
+    }
+
+    It 'allows remote sign-in for local accounts with blank passwords' {
+        Set-JindaBlankPasswordPolicy
+        Assert-MockCalled New-ItemProperty -Times 1 -Exactly -Scope It -ParameterFilter {
+            $LiteralPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -and
+            $Name -eq 'LimitBlankPasswordUse' -and $PropertyType -eq 'DWord' -and $Value -eq 0
+        }
+    }
+
+    It 'does not change the registry for WhatIf' {
+        Set-JindaBlankPasswordPolicy -WhatIf
+        Assert-MockCalled New-ItemProperty -Times 0 -Exactly -Scope It
+    }
+
+    It 'fails when the value cannot be verified' {
+        Mock Get-ItemProperty { [pscustomobject]@{ LimitBlankPasswordUse = 1 } }
+        { Set-JindaBlankPasswordPolicy } | Should Throw 'Could not verify the local blank-password policy'
+    }
+}
+
 Describe 'Local Windows password expiration policy' {
     BeforeEach {
         $script:accountPolicyCalls = New-Object 'System.Collections.Generic.List[object]'

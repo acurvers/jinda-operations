@@ -74,6 +74,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Mock Invoke-JindaChildProcess { 0 }
         Mock Set-JindaWindowsEnglish {}
         Mock Set-JindaLocalPasswordAgePolicy {}
+        Mock Set-JindaBlankPasswordPolicy {}
         Mock Set-JindaBrowserBookmarks {}
         Mock Get-LanRemoteAccessPlan { [pscustomobject]@{ Address='10.20.30.40'; Subnet='10.20.30.0/24' } }
         Mock Invoke-LanRemoteAccessSetup {}

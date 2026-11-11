@@ -712,6 +712,20 @@ function Set-JindaLocalPasswordAgePolicy {
     if ($queryExitCode -ne 0) { throw "Password policy was applied, but displaying the current policy failed (net.exe exit code $queryExitCode)." }
 }
 
+function Set-JindaBlankPasswordPolicy {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Local Windows account policy', 'Allow remote sign-in for local accounts with blank passwords')) { return }
+    if (-not (Test-JindaAdministrator)) { throw 'Local password policy setup requires administrator privileges.' }
+    $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
+    $null = New-ItemProperty -LiteralPath $path -Name LimitBlankPasswordUse -PropertyType DWord -Value 0 -Force -ErrorAction Stop
+    if ((Get-ItemProperty -LiteralPath $path -Name LimitBlankPasswordUse -ErrorAction Stop).LimitBlankPasswordUse -ne 0) {
+        throw 'Could not verify the local blank-password policy.'
+    }
+    Write-Host 'Windows allows remote sign-in for local accounts with blank passwords, subject to service-specific access rules.'
+}
+
 function Invoke-JindaConfiguration {
     param(
         [string]$ScriptPath, [string]$Keyboard,
@@ -735,6 +749,7 @@ function Invoke-JindaConfiguration {
     Set-JindaWindowsEnglish -Keyboard $Keyboard
     Write-Host ''
     Set-JindaLocalPasswordAgePolicy
+    Set-JindaBlankPasswordPolicy
     Write-Host ''
     Set-JindaBrowserBookmarks
     if ($remotePlan) {

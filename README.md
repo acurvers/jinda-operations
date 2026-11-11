@@ -103,7 +103,15 @@ app stopt de installatie en start de configuratie niet. Een software-exitcode
 3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
 doorgegeven. Init start Windows niet zelf opnieuw op.
 
-## Lokale wachtwoorden verlopen niet
+## Standaardbeleid voor lokale Windows-accounts
+
+Het configuratiescript zet `LimitBlankPasswordUse` op `0`. Daardoor staat
+Windows externe aanmelding met een leeg wachtwoord toe voor lokale accounts
+op deze pc. Deze instelling geldt ook voor andere netwerkdiensten. RDP en
+WinRM behouden hun eigen aanmeldvereisten en toegangsrechten. Centraal beleid
+kan deze lokale instelling overschrijven.
+
+[Microsoft-documentatie over lege wachtwoorden](https://learn.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/accounts-limit-local-account-use-of-blank-passwords-to-console-logon-only)
 
 Het configuratiescript stelt de maximale wachtwoordleeftijd voor lokale
 Windows-accounts in op **onbeperkt**, met `net.exe accounts /maxpwage:unlimited`.
