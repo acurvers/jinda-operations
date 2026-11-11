@@ -19,7 +19,7 @@ Describe 'Choices are collected once before unattended setup' {
         $script:prompts[0] | Should Be 'Download and install apps? [Y/n]'
         $script:prompts[1] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
         $script:prompts[2] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
-        $script:prompts[3] | Should Be 'Install OpenSSH client/server and enable SSH on the selected LAN? (N = skip; leave existing settings unchanged) [y/N]'
+        $script:prompts[3] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 

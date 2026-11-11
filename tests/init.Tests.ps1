@@ -39,6 +39,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches[1].Executable | Should Be 'C:\Program Files\PowerShell\7\pwsh.exe'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
         ($script:initLaunches[0].Arguments -contains '-EnableOpenSSH') | Should Be $false
+        ($script:initLaunches[0].Arguments -contains '-SshPublicKey') | Should Be $false
         foreach ($launch in $script:initLaunches) {
             [bool]$launch.Elevate | Should Be $false
             [bool]$launch.NonInteractive | Should Be $true
@@ -138,7 +139,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
         $script:initLaunches.Count | Should Be 2
         $script:initLaunches[0].Path | Should Match 'install-software.ps1$'
-        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -LanIPAddress 10.20.30.40 -SkipApps'
+        ($script:initLaunches[0].Arguments -join ' ') |
+            Should Match '^-EnableOpenSSH -LanIPAddress 10\.20\.30\.40 -SshPublicKey ssh-ed25519 [A-Za-z0-9+/]{68} salon-oss-admin -SkipApps$'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
         Assert-MockCalled Test-Path -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*skip-apps.conf' }
@@ -149,10 +151,11 @@ Describe 'Initialization orchestrates the two existing scripts' {
             [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '10.20.30.40' }
         }
         Invoke-JindaInitialization | Should Be 0
-        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -LanIPAddress 10.20.30.40'
+        ($script:initLaunches[0].Arguments -join ' ') |
+            Should Match '^-EnableOpenSSH -LanIPAddress 10\.20\.30\.40 -SshPublicKey ssh-ed25519 [A-Za-z0-9+/]{68} salon-oss-admin$'
     }
 
-    It 'passes the public key as one argument to the OpenSSH installer' {
+    It 'uses an explicitly supplied key in place of the salon key' {
         Mock Get-JindaSetupOptions {
             [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '10.20.30.40' }
         }

@@ -337,7 +337,7 @@ Describe 'All requested Jinda applications' {
 
     It 'respects the skip file even when SSH is the only selected component' {
         Mock Get-JindaSkippedApps { @('Windows.OpenSSH') }
-        Install-JindaSoftware -EnableOpenSSH -SkipApps | Should Be $false
+        Install-JindaSoftware -EnableOpenSSH -SkipApps -SshPublicKey 'ssh-ed25519 example-key' | Should Be $false
         Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
         Assert-MockCalled Get-Command -Times 0 -Exactly -Scope It -ParameterFilter { $Name -eq 'winget.exe' }
     }

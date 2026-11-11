@@ -23,7 +23,7 @@ The question defaults to No and is independent of the apps choice.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
 .PARAMETER SshPublicKey
-Optional Ed25519 public key for the enabled local Windows accounts when OpenSSH is selected.
+Overrides the salon Ed25519 public key installed for local Windows accounts when OpenSSH is selected.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -272,7 +272,7 @@ function Get-JindaSetupOptions {
     $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
-    $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH client/server and enable SSH on the selected LAN? (N = skip; leave existing settings unchanged)' -Choice $OpenSSH
+    $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
     $address = ''
     if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; OpenSSH = $ssh; LanIPAddress = $address }
@@ -316,8 +316,12 @@ function Invoke-JindaInitialization {
     if ($options.InstallApps -or $options.OpenSSH) {
         if ($RepairWinGet -and $options.InstallApps) { Repair-JindaWinGet }
         $installArguments = @()
-        if ($options.OpenSSH) { $installArguments += @('-EnableOpenSSH', '-LanIPAddress', $options.LanIPAddress) }
-        if ($SshPublicKey) { $installArguments += @('-SshPublicKey', $SshPublicKey) }
+        if ($options.OpenSSH) {
+            if (-not $SshPublicKey) {
+                $SshPublicKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIMeP3VEDigCWmNhjGp6BnNldtmax6GKg1Ge5xgJ5lGg salon-oss-admin'
+            }
+            $installArguments += @('-EnableOpenSSH', '-LanIPAddress', $options.LanIPAddress, '-SshPublicKey', $SshPublicKey)
+        }
         if (-not $options.InstallApps) { $installArguments += '-SkipApps' }
         Write-Host 'Step 1/2: installing the selected software components.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive

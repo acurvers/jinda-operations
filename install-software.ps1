@@ -598,10 +598,10 @@ function Install-JindaSoftware {
     $PSNativeCommandUseErrorActionPreference = $false
     # Validate the package list and any machine-specific list before installing.
     $skippedApps = @(Get-JindaSkippedApps)
-    if ($SshPublicKey) {
-        if (-not $EnableOpenSSH -or 'Windows.OpenSSH' -in $skippedApps) {
-            throw 'The public key requires the OpenSSH installation option to be enabled and not skipped.'
-        }
+    if ($SshPublicKey -and -not $EnableOpenSSH) {
+        throw 'The public key requires the OpenSSH installation option to be enabled.'
+    }
+    if ($SshPublicKey -and 'Windows.OpenSSH' -notin $skippedApps) {
         $SshPublicKey = ConvertTo-JindaEd25519PublicKey -PublicKey $SshPublicKey
     }
     $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {

@@ -39,7 +39,7 @@ hun eigen taalinstelling.
 | Download and install apps? | Ja | Geen gewone apps downloaden/installeren en geen WinGet-herstel; OpenSSH heeft een eigen keuze |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
-| Install OpenSSH client/server and enable SSH on the selected LAN? | Nee | OpenSSH-installatie, service en firewall blijven ongemoeid |
+| Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -268,14 +268,10 @@ Bron: [Microsoft: OpenSSH voor Windows](https://learn.microsoft.com/en-us/window
 
 ### SSH-sleutel voor de salon-pc's
 
-Geef de publieke Ed25519-sleutel expliciet mee met `-SshPublicKey` aan `init.ps1`
-en selecteer OpenSSH. Gebruik de publieke sleutelregel uit het `.pub`-bestand.
-De privésleutel hoort op de beheer-pc.
-
-```powershell
-$key = (Get-Content -LiteralPath 'C:\Support\ssh-management.pub' -Raw).Trim()
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\init.ps1 -OpenSSH Yes -SshPublicKey $key
-```
+Gebruik de gewone startopdracht en kies **Y** bij OpenSSH. `init.ps1` geeft dan
+de publieke Ed25519-sleutel `salon-oss-admin` door. Met `-SshPublicKey` kun je
+desgewenst een andere publieke Ed25519-sleutel opgeven. De privésleutel hoort
+op de beheer-pc.
 
 Setup voegt de sleutel toe naast de bestaande sleutels voor ingeschakelde
 lokale Windows-gebruikers. Het gebruikt het eigen `.ssh\authorized_keys` voor
