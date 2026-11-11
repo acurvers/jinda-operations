@@ -152,6 +152,16 @@ Describe 'Initialization orchestrates the two existing scripts' {
         ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -LanIPAddress 10.20.30.40'
     }
 
+    It 'passes the public key as one argument to the OpenSSH installer' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '10.20.30.40' }
+        }
+        $publicKey = 'ssh-ed25519 example-key salon pc'
+        Invoke-JindaInitialization -SshPublicKey $publicKey | Should Be 0
+        $script:initLaunches[0].Arguments[3] | Should Be '-SshPublicKey'
+        $script:initLaunches[0].Arguments[4] | Should Be $publicKey
+    }
+
     It 'rejects a missing installer before an SSH-only run' {
         Mock Get-JindaSetupOptions {
             [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }

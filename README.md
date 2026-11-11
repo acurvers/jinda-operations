@@ -247,9 +247,8 @@ regel geldt op alle netwerkprofielen, waaronder Public. Het netwerkprofiel
 van de adapter blijft zoals Windows het heeft ingesteld.
 
 Gebruik een bestaand Windows-account met wachtwoord (geen Windows Hello-pincode)
-of een al ingestelde SSH-sleutel. Er worden geen accounts of sleutels toegevoegd
-en `sshd_config` blijft behouden; de standaardpoort is 22. Bij bestaande afwijkende
-SSH-poorten blijft die configuratie gelden, maar deze firewallregel betreft alleen 22.
+of een SSH-sleutel. De firewallregel betreft TCP 22. Het script behoudt
+`sshd_config`, inclusief een eventueel afwijkende luisterpoort.
 Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
 nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
 Na het starten van `sshd` toont de installer de luisteraars op TCP 22 en de
@@ -266,6 +265,25 @@ Geef bij meerdere actieve LAN-adressen ook `-LanIPAddress <actief-IPv4-adres>` m
 Het deelscript stelt geen vragen; de y/n-vraag staat vooraf in `init.ps1`.
 De RDP/WinRM-keuzes regelen afzonderlijke protocollen.
 Bron: [Microsoft: OpenSSH voor Windows](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
+
+### SSH-sleutel voor de salon-pc's
+
+Geef de publieke Ed25519-sleutel expliciet mee met `-SshPublicKey` aan `init.ps1`
+en selecteer OpenSSH. Gebruik de publieke sleutelregel uit het `.pub`-bestand.
+De privésleutel hoort op de beheer-pc.
+
+```powershell
+$key = (Get-Content -LiteralPath 'C:\Support\ssh-management.pub' -Raw).Trim()
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\init.ps1 -OpenSSH Yes -SshPublicKey $key
+```
+
+Setup voegt de sleutel toe naast de bestaande sleutels voor ingeschakelde
+lokale Windows-gebruikers. Het gebruikt het eigen `.ssh\authorized_keys` voor
+standaardgebruikers en het gedeelde `administrators_authorized_keys` voor
+beheerders. Zo nodig initialiseert Windows eerst het profiel van een
+standaardgebruiker. De SSH-server moet deze standaard Windows-sleutelbestanden
+gebruiken en sleutelverificatie toestaan.
+[Microsoft over SSH-sleutels op Windows](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement)
 
 ChatGPT Classic en de Codex-desktopapp zijn aparte apps. De huidige
 [Codex-desktopapp heet ChatGPT](https://learn.chatgpt.com/docs/windows/windows-app)

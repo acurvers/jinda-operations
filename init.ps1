@@ -22,6 +22,8 @@ Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on 
 The question defaults to No and is independent of the apps choice.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
+.PARAMETER SshPublicKey
+Optional Ed25519 public key for the enabled local Windows accounts when OpenSSH is selected.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -33,6 +35,7 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
     [string]$LanIPAddress,
+    [string]$SshPublicKey,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -285,7 +288,8 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoteDesktop = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
-        [string]$LanIPAddress
+        [string]$LanIPAddress,
+        [string]$SshPublicKey
     )
 
     $ErrorActionPreference = 'Stop'
@@ -293,6 +297,9 @@ function Invoke-JindaInitialization {
 
     # The start command downloads one complete source archive. Children never prompt.
     $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress
+    if ($SshPublicKey -and -not $options.OpenSSH) {
+        throw 'Select OpenSSH when providing -SshPublicKey.'
+    }
     $folder = $PSScriptRoot
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
@@ -310,6 +317,7 @@ function Invoke-JindaInitialization {
         if ($RepairWinGet -and $options.InstallApps) { Repair-JindaWinGet }
         $installArguments = @()
         if ($options.OpenSSH) { $installArguments += @('-EnableOpenSSH', '-LanIPAddress', $options.LanIPAddress) }
+        if ($SshPublicKey) { $installArguments += @('-SshPublicKey', $SshPublicKey) }
         if (-not $options.InstallApps) { $installArguments += '-SkipApps' }
         Write-Host 'Step 1/2: installing the selected software components.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive
@@ -342,8 +350,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
+        if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey
         }
         exit $exitCode
     }

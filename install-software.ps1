@@ -16,6 +16,8 @@ Without this switch, existing OpenSSH installation and settings are left unchang
 .PARAMETER LanIPAddress
 Select the active IPv4 address for the OpenSSH firewall rule. If omitted, exactly
 one active IPv4 LAN address must be available.
+.PARAMETER SshPublicKey
+Optional Ed25519 public key for the enabled local Windows accounts when OpenSSH is selected.
 .PARAMETER SkipApps
 Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-only installation.
 #>
@@ -24,6 +26,7 @@ param(
     [switch]$EnableOpenSSH,
     [switch]$SkipApps,
     [string]$LanIPAddress,
+    [string]$SshPublicKey,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -339,9 +342,127 @@ function Test-JindaOpenSSHSetup {
     Write-Host "SUCCESS: the SSH firewall rule is enforced on $($Lan.InterfaceAlias) for $($Lan.Address) from $($Lan.Subnet)."
 }
 
+function ConvertTo-JindaEd25519PublicKey {
+    param([string]$PublicKey)
+
+    if ($PublicKey.Trim() -cnotmatch '\Assh-ed25519[ \t]+([A-Za-z0-9+/]{68})(?:[ \t]+[^\r\n]*)?\z') {
+        throw 'Provide one OpenSSH Ed25519 public key, beginning with ssh-ed25519.'
+    }
+    $blob = $Matches[1]
+    $bytes = [Convert]::FromBase64String($blob)
+    # The wire format is the ssh-ed25519 algorithm name followed by a 32-byte key.
+    if ([BitConverter]::ToString($bytes, 0, 19) -ne '00-00-00-0B-73-73-68-2D-65-64-32-35-35-31-39-00-00-00-20') {
+        throw 'The supplied Ed25519 public key has an invalid OpenSSH key blob.'
+    }
+    return "ssh-ed25519 $blob"
+}
+
+function Get-JindaSshProfilePath {
+    param($User)
+
+    $sid = $User.SID.Value
+    $filter = "SID = '$sid' AND Special = FALSE"
+    $profile = Get-CimInstance -ClassName Win32_UserProfile -Filter $filter -ErrorAction Stop
+    if ($profile) { return $profile.LocalPath }
+
+    # Create a Windows profile so a local account can use its key on first sign-in.
+    if (-not ('JindaOperations.UserProfiles' -as [type])) {
+        Add-Type -Namespace JindaOperations -Name UserProfiles -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("userenv.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, ExactSpelling = true)]
+public static extern int CreateProfile(string sid, string name, System.Text.StringBuilder path, uint pathCapacity);
+'@ -ErrorAction Stop
+    }
+    $path = [System.Text.StringBuilder]::new(32768)
+    $result = [JindaOperations.UserProfiles]::CreateProfile($sid, $User.Name, $path, $path.Capacity)
+    if ($result -eq 0) { return $path.ToString() }
+    if ($result -eq -2147024713) {
+        $profile = Get-CimInstance -ClassName Win32_UserProfile -Filter $filter -ErrorAction Stop
+        if ($profile) { return $profile.LocalPath }
+    }
+    throw ('Could not initialize the Windows profile for {0} (HRESULT 0x{1:X8}).' -f $User.Name, $result)
+}
+
+function Set-JindaSshAuthorizedKey {
+    param([string]$Path, [string]$PublicKey, [System.Security.Principal.SecurityIdentifier]$UserSid)
+
+    $directory = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        $null = New-Item -Path $directory -ItemType Directory -ErrorAction Stop
+    }
+    $folder = Get-Item -LiteralPath $directory -Force -ErrorAction Stop
+    if ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "OpenSSH key directory must not be a link: $directory"
+    }
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        $null = New-Item -Path $Path -ItemType File -ErrorAction Stop
+    }
+    $file = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if ($file.PSIsContainer -or $file.LinkType -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "OpenSSH key file must be a regular file: $Path"
+    }
+
+    $adminSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+    $security = [System.Security.AccessControl.FileSecurity]::new()
+    $security.SetOwner($adminSid)
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @($adminSid, $systemSid, $UserSid) | Where-Object { $_ }) {
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'Allow')
+        $security.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $Path -AclObject $security -ErrorAction Stop
+
+    # Keep existing lines and key options. Lock out concurrent writes during the read and append.
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    $stream = [IO.File]::Open($Path, 'Open', 'ReadWrite', 'Read')
+    try {
+        $reader = [IO.StreamReader]::new($stream, $utf8, $true, 1024, $true)
+        try {
+            $existing = $reader.ReadToEnd()
+            if ($reader.CurrentEncoding.CodePage -ne $utf8.CodePage) {
+                throw "OpenSSH key file must be UTF-8 or ASCII: $Path"
+            }
+        } finally { $reader.Dispose() }
+        $blob = [regex]::Escape($PublicKey.Split(' ')[1])
+        $pattern = '^[ \t]*(?:(?:[^ \t"\\]|\\.|"(?:[^"\\]|\\.)*")+[ \t]+)?ssh-ed25519[ \t]+{0}(?:[ \t]|$)' -f $blob
+        foreach ($line in $existing -split '\r?\n') {
+            if ($line -notmatch '^\s*#' -and $line -cmatch $pattern) { return }
+        }
+        $separator = if ($existing -and -not $existing.EndsWith([string][char]10)) { [Environment]::NewLine } else { '' }
+        $append = $utf8.GetBytes($separator + $PublicKey + [Environment]::NewLine)
+        $null = $stream.Seek(0, 'End')
+        $stream.Write($append, 0, $append.Length)
+    } finally { $stream.Dispose() }
+}
+
+function Add-JindaOpenSSHManagementKey {
+    param([string]$PublicKey)
+
+    $users = @(Get-LocalUser -ErrorAction Stop | Where-Object Enabled)
+    $adminSids = @(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction Stop |
+        ForEach-Object { $_.SID.Value })
+    $adminUsers = @($users | Where-Object { $_.SID.Value -in $adminSids })
+    if ($adminUsers.Count -gt 0) {
+        $path = Join-Path $env:ProgramData 'ssh\administrators_authorized_keys'
+        Set-JindaSshAuthorizedKey -Path $path -PublicKey $PublicKey
+        Write-Host 'SSH public key configured for local administrators.'
+    }
+    foreach ($user in $users | Where-Object { $_.SID.Value -notin $adminSids }) {
+        $profile = Get-JindaSshProfilePath -User $user
+        $profileDirectory = Get-Item -LiteralPath $profile -Force -ErrorAction Stop
+        if (-not $profileDirectory.PSIsContainer -or ($profileDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Expected a regular Windows profile directory for $($user.Name)."
+        }
+        $path = Join-Path $profile '.ssh\authorized_keys'
+        Set-JindaSshAuthorizedKey -Path $path -PublicKey $PublicKey -UserSid $user.SID
+        Write-Host "SSH public key configured for $($user.Name)."
+    }
+}
+
 function Install-JindaOpenSSH {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param([string]$LanIPAddress)
+    param([string]$LanIPAddress, [string]$SshPublicKey)
 
     # Use Microsoft's in-box features, serviced by Windows Update, not a preview MSI.
     # https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
@@ -397,8 +518,9 @@ function Install-JindaOpenSSH {
         throw 'OpenSSH is installed, but the sshd service is not running.'
     }
     Test-JindaOpenSSHSetup -RuleName $ruleName -Lan $lan
+    if ($SshPublicKey) { Add-JindaOpenSSHManagementKey -PublicKey $SshPublicKey }
     Write-Host 'OpenSSH is installed and sshd is configured to start with Windows.'
-    Write-Host 'Use an existing Windows account and its password or configured SSH key. Existing SSH configuration and keys are preserved.'
+    Write-Host 'Use an existing Windows account and its password or configured SSH key.'
     return $false
 }
 
@@ -469,13 +591,19 @@ function Get-JindaSkippedApps {
 
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param([switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress)
+    param([switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress, [string]$SshPublicKey)
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
     $PSNativeCommandUseErrorActionPreference = $false
     # Validate the package list and any machine-specific list before installing.
     $skippedApps = @(Get-JindaSkippedApps)
+    if ($SshPublicKey) {
+        if (-not $EnableOpenSSH -or 'Windows.OpenSSH' -in $skippedApps) {
+            throw 'The public key requires the OpenSSH installation option to be enabled and not skipped.'
+        }
+        $SshPublicKey = ConvertTo-JindaEd25519PublicKey -PublicKey $SshPublicKey
+    }
     $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {
         if ($package.Id -eq 'Windows.OpenSSH' -and -not $EnableOpenSSH) {
             Write-Host 'OpenSSH was not selected; existing installation and settings are unchanged.'
@@ -526,7 +654,7 @@ function Install-JindaSoftware {
 
     foreach ($package in $packages) {
         if ($package.Source -eq 'windows-capability') {
-            if (Install-JindaOpenSSH -LanIPAddress $LanIPAddress -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
+            if (Install-JindaOpenSSH -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
             continue
         }
         if ($package.Source -eq 'yodeck') {
@@ -578,8 +706,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($EnableOpenSSH) { $scriptArguments += '-EnableOpenSSH' }
         if ($SkipApps) { $scriptArguments += '-SkipApps' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
+        if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -LanIPAddress $LanIPAddress) { return 3010 }
+            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey) { return 3010 }
             return 0
         }
         exit $exitCode

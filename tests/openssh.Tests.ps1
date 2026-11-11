@@ -41,6 +41,7 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         }
         Mock Start-Sleep {}
         Mock Write-Warning {}
+        Mock Add-JindaOpenSSHManagementKey {}
     }
 
     It 'installs both stable Windows features without rebooting and scopes the standard rule before starting SSH' {
@@ -115,6 +116,14 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Assert-MockCalled Add-WindowsCapability -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Service -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It
+        Assert-MockCalled Add-JindaOpenSSHManagementKey -Times 0 -Exactly -Scope It
+    }
+
+    It 'provisions the optional public key after OpenSSH is running' {
+        Install-JindaOpenSSH -SshPublicKey 'ssh-ed25519 example-key' | Should Be $false
+        Assert-MockCalled Add-JindaOpenSSHManagementKey -Times 1 -Exactly -Scope It -ParameterFilter {
+            $PublicKey -eq 'ssh-ed25519 example-key' -and $script:sshStatus -eq 'Running'
+        }
     }
 
     It 'creates a restricted rule if Windows did not supply one' {
@@ -177,5 +186,71 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Service -Times 0 -Exactly -Scope It
         Assert-MockCalled Set-Service -Times 0 -Exactly -Scope It
+    }
+}
+
+Describe 'OpenSSH management public key' {
+    BeforeEach {
+        $header = [byte[]]@(0,0,0,11,115,115,104,45,101,100,50,53,53,49,57,0,0,0,32)
+        $script:managementKey = 'ssh-ed25519 ' + [Convert]::ToBase64String($header + [byte[]](1..32))
+        $script:adminUserSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-1-2-3-1001')
+        $script:standardUserSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-1-2-3-1002')
+        $script:disabledUserSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-1-2-3-1003')
+    }
+
+    It 'accepts one Ed25519 public key and strips the comment' {
+        ConvertTo-JindaEd25519PublicKey "$script:managementKey salon admin" | Should Be $script:managementKey
+    }
+
+    It 'rejects a private key, extra lines and an invalid Ed25519 blob' {
+        { ConvertTo-JindaEd25519PublicKey '-----BEGIN OPENSSH PRIVATE KEY-----' } | Should Throw 'one OpenSSH Ed25519 public key'
+        { ConvertTo-JindaEd25519PublicKey ($script:managementKey + [Environment]::NewLine + $script:managementKey) } |
+            Should Throw 'one OpenSSH Ed25519 public key'
+        { ConvertTo-JindaEd25519PublicKey ('ssh-ed25519 ' + ('A' * 68)) } | Should Throw 'invalid OpenSSH key blob'
+    }
+
+    It 'appends once and keeps the previous key text and options' {
+        Mock Set-Acl {}
+        $path = Join-Path $TestDrive 'authorized_keys'
+        $existing = 'restrict ssh-ed25519 previous-key existing comment'
+        [IO.File]::WriteAllText($path, $existing)
+        Set-JindaSshAuthorizedKey -Path $path -PublicKey $script:managementKey -UserSid $script:standardUserSid
+        Set-JindaSshAuthorizedKey -Path $path -PublicKey $script:managementKey -UserSid $script:standardUserSid
+        [IO.File]::ReadAllText($path) | Should Be ($existing + [Environment]::NewLine + $script:managementKey + [Environment]::NewLine)
+        Assert-MockCalled Set-Acl -Times 2 -Exactly -Scope It -ParameterFilter {
+            $AclObject.AreAccessRulesProtected -and
+            $AclObject.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq 'S-1-5-32-544' -and
+            (($AclObject.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]).IdentityReference.Value |
+                Sort-Object) -join ',') -eq 'S-1-5-18,S-1-5-21-1-2-3-1002,S-1-5-32-544'
+        }
+    }
+
+    It 'preserves restrictions on a copy of the same key that already exists' {
+        Mock Set-Acl {}
+        $path = Join-Path $TestDrive 'restricted_authorized_keys'
+        $existing = 'restrict,command="cmd /c echo example" ' + $script:managementKey + ' old comment'
+        [IO.File]::WriteAllText($path, $existing)
+        Set-JindaSshAuthorizedKey -Path $path -PublicKey $script:managementKey
+        [IO.File]::ReadAllText($path) | Should Be $existing
+    }
+
+    It 'uses the administrator file once and the enabled standard user profile' {
+        Mock Get-LocalUser {
+            [pscustomobject]@{ Name = 'admin'; Enabled = $true; SID = $script:adminUserSid }
+            [pscustomobject]@{ Name = 'employee'; Enabled = $true; SID = $script:standardUserSid }
+            [pscustomobject]@{ Name = 'disabled'; Enabled = $false; SID = $script:disabledUserSid }
+        }
+        Mock Get-LocalGroupMember { [pscustomobject]@{ SID = $script:adminUserSid } }
+        Mock Get-JindaSshProfilePath { $TestDrive }
+        Mock Set-JindaSshAuthorizedKey {}
+        Add-JindaOpenSSHManagementKey -PublicKey $script:managementKey
+        Assert-MockCalled Set-JindaSshAuthorizedKey -Times 2 -Exactly -Scope It
+        Assert-MockCalled Set-JindaSshAuthorizedKey -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Path -eq (Join-Path $env:ProgramData 'ssh\administrators_authorized_keys') -and -not $UserSid
+        }
+        Assert-MockCalled Set-JindaSshAuthorizedKey -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Path -eq (Join-Path $TestDrive '.ssh\authorized_keys') -and $UserSid -eq $script:standardUserSid
+        }
+        Assert-MockCalled Get-JindaSshProfilePath -Times 1 -Exactly -Scope It
     }
 }
