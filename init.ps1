@@ -20,6 +20,8 @@ Ask (default), Yes or No. Enables Windows PowerShell remoting (WinRM).
 .PARAMETER OpenSSH
 Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on the selected IPv4 LAN.
 The question defaults to No and is independent of the apps choice.
+.PARAMETER RemoveBundledApps
+Ask (default), Yes or No. Removes LinkedIn and Microsoft Solitaire Collection. Defaults to No.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
 .PARAMETER SshPublicKey
@@ -36,6 +38,7 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
     [string]$LanIPAddress,
     [string]$SshPublicKey,
+    [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -266,16 +269,21 @@ function Select-JindaLanAddress {
 function Get-JindaSetupOptions {
     param(
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
-        [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask', [string]$LanIPAddress
+        [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask',
+        [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
+    $removeApps = Read-JindaYesNo -Prompt 'Uninstall LinkedIn and Microsoft Solitaire Collection?' -Choice $RemoveBundledApps
     $address = ''
     if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
-    [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; OpenSSH = $ssh; LanIPAddress = $address }
+    [pscustomobject]@{
+        InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm
+        OpenSSH = $ssh; RemoveBundledApps = $removeApps; LanIPAddress = $address
+    }
 }
 
 function Invoke-JindaInitialization {
@@ -289,14 +297,15 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$PowerShellRemoting = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
         [string]$LanIPAddress,
-        [string]$SshPublicKey
+        [string]$SshPublicKey,
+        [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask'
     )
 
     $ErrorActionPreference = 'Stop'
     if (-not $PSCmdlet.ShouldProcess('This PC', 'Install Jinda software and configure Windows')) { return 0 }
 
     # The start command downloads one complete source archive. Children never prompt.
-    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress
+    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -RemoveBundledApps $RemoveBundledApps -LanIPAddress $LanIPAddress
     if ($SshPublicKey -and -not $options.OpenSSH) {
         throw 'Select OpenSSH when providing -SshPublicKey.'
     }
@@ -334,29 +343,31 @@ function Invoke-JindaInitialization {
     $configArguments = @('-Keyboard', $Keyboard)
     if ($options.RemoteDesktop) { $configArguments += '-EnableRemoteDesktop' }
     if ($options.PowerShellRemoting) { $configArguments += '-EnableWinRM' }
+    if ($options.RemoveBundledApps) { $configArguments += '-RemoveBundledApps' }
     if ($options.RemoteDesktop -or $options.PowerShellRemoting) {
         $configArguments += @('-LanIPAddress', $options.LanIPAddress)
     }
     $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
-    if ($configCode -ne 0) { throw "Windows configuration failed (exit code $configCode)." }
+    if ($configCode -notin @(0, 3010)) { throw "Windows configuration failed (exit code $configCode)." }
 
-    if ($installCode -eq 3010) {
+    if ($installCode -eq 3010 -or $configCode -eq 3010) {
         Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'
-    } else {
-        Write-Host 'Jinda setup completed.'
+        return 3010
     }
-    return $installCode
+    Write-Host 'Jinda setup completed.'
+    return 0
 }
 
 # Dot-sourcing defines functions only, for tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
+        if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey
+            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -RemoveBundledApps $RemoveBundledApps -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey
         }
         exit $exitCode
     }

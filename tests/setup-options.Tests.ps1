@@ -8,29 +8,32 @@ Describe 'Choices are collected once before unattended setup' {
         Mock Select-JindaLanAddress { '10.20.30.40' }
     }
 
-    It 'asks apps first, then RDP, WinRM and SSH, with apps yes and remote no as defaults' {
-        foreach ($answer in @('', '', '', '')) { $script:answers.Enqueue($answer) }
+    It 'asks about installing apps first and defaults the remaining choices to no' {
+        foreach ($answer in @('', '', '', '', '')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
         $options.InstallApps | Should Be $true
         $options.RemoteDesktop | Should Be $false
         $options.PowerShellRemoting | Should Be $false
         $options.OpenSSH | Should Be $false
-        $script:prompts.Count | Should Be 4
+        $options.RemoveBundledApps | Should Be $false
+        $script:prompts.Count | Should Be 5
         $script:prompts[0] | Should Be 'Download and install apps? [Y/n]'
         $script:prompts[1] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
         $script:prompts[2] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
         $script:prompts[3] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
+        $script:prompts[4] | Should Be 'Uninstall LinkedIn and Microsoft Solitaire Collection? [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 
     It 'accepts independent yes/no choices and selects the LAN before returning' {
-        foreach ($answer in @('n', 'y', 'n', 'y')) { $script:answers.Enqueue($answer) }
+        foreach ($answer in @('n', 'y', 'n', 'y', 'y')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
         $options.InstallApps | Should Be $false
         $options.RemoteDesktop | Should Be $true
         $options.PowerShellRemoting | Should Be $false
         $options.LanIPAddress | Should Be '10.20.30.40'
         $options.OpenSSH | Should Be $true
+        $options.RemoveBundledApps | Should Be $true
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
     }
 
@@ -41,17 +44,18 @@ Describe 'Choices are collected once before unattended setup' {
     }
 
     It 'selects the LAN when SSH is the only remote access option' {
-        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH Yes
+        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH Yes -RemoveBundledApps No
         $options.LanIPAddress | Should Be '10.20.30.40'
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
     }
 
     It 'uses explicit parameter choices without prompts' {
-        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -LanIPAddress '10.20.30.40'
+        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -RemoveBundledApps Yes -LanIPAddress '10.20.30.40'
         $options.InstallApps | Should Be $false
         $options.RemoteDesktop | Should Be $false
         $options.PowerShellRemoting | Should Be $true
         $options.OpenSSH | Should Be $true
+        $options.RemoveBundledApps | Should Be $true
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It -ParameterFilter { $Address -eq '10.20.30.40' }
     }

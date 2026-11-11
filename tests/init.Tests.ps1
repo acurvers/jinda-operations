@@ -7,7 +7,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initExitCodes = @(0, 0)
         Mock Get-JindaSetupOptions {
             $script:initEvents.Add('choices')
-            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false; LanIPAddress = '' }
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false; RemoveBundledApps = $false; LanIPAddress = '' }
         }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
@@ -78,6 +78,19 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initExitCodes = @(3010, 0)
         Invoke-JindaInitialization | Should Be 3010
         $script:initLaunches.Count | Should Be 2
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed. Restart Windows to apply the changes.' }
+    }
+
+    It 'removes bundled apps without running the installer and preserves the configuration restart code' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false; RemoveBundledApps = $true; LanIPAddress = '' }
+        }
+        $script:initExitCodes = @(3010)
+        Invoke-JindaInitialization -RemoveBundledApps Yes | Should Be 3010
+        Assert-MockCalled Get-JindaSetupOptions -Times 1 -Exactly -Scope It -ParameterFilter { $RemoveBundledApps -eq 'Yes' }
+        $script:initLaunches.Count | Should Be 1
+        $script:initLaunches[0].Path | Should Match 'set-windows-english.ps1$'
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -RemoveBundledApps'
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed. Restart Windows to apply the changes.' }
     }
 

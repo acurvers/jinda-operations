@@ -22,6 +22,8 @@ Enables Windows PowerShell and the latest installed stable PowerShell 7 remoting
 Connect with -ConfigurationName PowerShell.7. Without this switch, WinRM settings are unchanged.
 .PARAMETER LanIPAddress
 Active IPv4 address on this PC; required when a remote access option is selected.
+.PARAMETER RemoveBundledApps
+Uninstall the LinkedIn and Microsoft Solitaire Collection Appx packages for all users and remove provisioning for new profiles.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -30,6 +32,7 @@ param(
     [switch]$EnableRemoteDesktop,
     [switch]$EnableWinRM,
     [string]$LanIPAddress,
+    [switch]$RemoveBundledApps,
     [Parameter(DontShow = $true)][switch]$RuntimeReady,
     [Parameter(DontShow = $true)][switch]$WindowsLanguageWorker
 )
@@ -726,10 +729,46 @@ function Set-JindaBlankPasswordPolicy {
     Write-Host 'Windows allows remote sign-in for local accounts with blank passwords, subject to service-specific access rules.'
 }
 
+function Uninstall-JindaBundledApps {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('LinkedIn and Microsoft Solitaire Collection', 'Uninstall Appx packages for all users and remove provisioning')) { return $false }
+    if (-not (Test-JindaAdministrator)) { throw 'Windows app removal requires administrator privileges.' }
+
+    $identities = @('7EE7776C.LinkedInforWindows', 'Microsoft.MicrosoftSolitaireCollection')
+    $restartNeeded = $false
+    $provisioned = Get-AppxProvisionedPackage -Online -ErrorAction Stop |
+        Where-Object { $_.DisplayName -in $identities }
+    foreach ($package in $provisioned) {
+        $result = Remove-AppxProvisionedPackage -Online -PackageName $package.PackageName -ErrorAction Stop
+        $restartNeeded = $restartNeeded -or $result.RestartNeeded
+        Write-Host "Removed provisioning for $($package.DisplayName)."
+    }
+
+    $packages = @(Get-AppxPackage -AllUsers -PackageTypeFilter Bundle,Main -ErrorAction Stop |
+        Where-Object { $_.Name -in $identities })
+    $bundles = @($packages | Where-Object IsBundle)
+    $installed = @($packages | Where-Object { $_.PackageUserInformation.InstallState -contains 'Installed' })
+    $parents = foreach ($package in $installed) {
+        $bundle = $bundles | Where-Object { $_.Name -eq $package.Name -and $_.Version -eq $package.Version } | Select-Object -First 1
+        if ($bundle) { $bundle } else { $package }
+    }
+    foreach ($package in $parents | Sort-Object PackageFullName -Unique) {
+        Remove-AppxPackage -AllUsers -Package $package.PackageFullName -ErrorAction Stop | Out-Null
+        Write-Host "Uninstalled $($package.Name) for all users."
+    }
+    if (-not $provisioned -and -not $installed) {
+        Write-Host 'LinkedIn and Microsoft Solitaire Collection are already absent.'
+    }
+    return [bool]$restartNeeded
+}
+
 function Invoke-JindaConfiguration {
     param(
         [string]$ScriptPath, [string]$Keyboard,
-        [switch]$EnableRemoteDesktop, [switch]$EnableWinRM, [string]$LanIPAddress
+        [switch]$EnableRemoteDesktop, [switch]$EnableWinRM, [string]$LanIPAddress,
+        [switch]$RemoveBundledApps
     )
     if ($PSVersionTable.PSEdition -ne 'Desktop') {
         # Keep live WinUserLanguage objects in one native Windows PowerShell process.
@@ -738,6 +777,7 @@ function Invoke-JindaConfiguration {
         $workerArguments = @('-Keyboard', $Keyboard, '-WindowsLanguageWorker', '-RuntimeReady')
         if ($EnableRemoteDesktop) { $workerArguments += '-EnableRemoteDesktop' }
         if ($EnableWinRM) { $workerArguments += '-EnableWinRM' }
+        if ($RemoveBundledApps) { $workerArguments += '-RemoveBundledApps' }
         if ($LanIPAddress) { $workerArguments += @('-LanIPAddress', $LanIPAddress) }
         return Invoke-JindaChildProcess -Executable (Get-JindaWindowsPowerShell) -ScriptPath $ScriptPath -ScriptArguments $workerArguments -NonInteractive
     }
@@ -758,6 +798,7 @@ function Invoke-JindaConfiguration {
         $remotePlan | Select-Object Address, RemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
         Invoke-LanRemoteAccessSetup -Plan $remotePlan | Out-Host
     }
+    if ($RemoveBundledApps -and (Uninstall-JindaBundledApps)) { return 3010 }
     return 0
 }
 
@@ -768,9 +809,10 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($WindowsLanguageWorker) { $forwardArguments += '-WindowsLanguageWorker' }
         if ($EnableRemoteDesktop) { $forwardArguments += '-EnableRemoteDesktop' }
         if ($EnableWinRM) { $forwardArguments += '-EnableWinRM' }
+        if ($RemoveBundledApps) { $forwardArguments += '-RemoveBundledApps' }
         if ($LanIPAddress) { $forwardArguments += @('-LanIPAddress', $LanIPAddress) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $forwardArguments -RuntimeReady:$RuntimeReady -WindowsPowerShell:$WindowsLanguageWorker -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaConfiguration -ScriptPath $PSCommandPath -Keyboard $Keyboard -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM -LanIPAddress $LanIPAddress
+            Invoke-JindaConfiguration -ScriptPath $PSCommandPath -Keyboard $Keyboard -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM -LanIPAddress $LanIPAddress -RemoveBundledApps:$RemoveBundledApps
         }
         exit $exitCode
     }

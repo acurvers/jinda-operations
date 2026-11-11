@@ -40,6 +40,7 @@ hun eigen taalinstelling.
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
+| Uninstall LinkedIn and Microsoft Solitaire Collection? | Nee | Beide apps blijven staan |
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -47,7 +48,7 @@ Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vra
 De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
 
 Voor vooraf ingevulde keuzes kun je `-InstallApps Yes|No`, `-RemoteDesktop Yes|No`,
-`-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
+`-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No`, `-RemoveBundledApps Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
 init meegeven. Zonder deze parameters gebruikt init `Ask`. Gebruik bij meerdere
 netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
 
@@ -55,6 +56,9 @@ OpenSSH heeft een eigen keuze, onafhankelijk van apps installeren, RDP en WinRM.
 Met apps **N** en OpenSSH **Y** worden alleen de SSH-onderdelen geinstalleerd;
 WinGet en de andere apps worden overgeslagen. Daarna volgt de normale Windows-configuratie.
 RDP, WinRM en SSH gebruiken dezelfde LAN-keuze.
+
+Met **Y** bij verwijderen ruimt de configuratie de Windows-apps LinkedIn en Microsoft Solitaire Collection op
+voor bestaande gebruikers en haalt ze uit de standaardinstallatie voor nieuwe gebruikers. Dit werkt ook met apps installeren op **N**.
 
 ## Optioneel WinGet-herstel
 
@@ -99,8 +103,8 @@ Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
 Alleen een fout bij Google Chrome geeft een waarschuwing en laat de overige apps
 en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een andere
 app stopt de installatie en start de configuratie niet. Een software-exitcode
-3010 (herstart nodig) laat de configuratie wel doorgaan en wordt aan het einde
-doorgegeven. Init start Windows niet zelf opnieuw op.
+3010 (herstart nodig) laat de configuratie doorgaan. Als de installatie of configuratie
+3010 teruggeeft, meldt init aan het eind dat een herstart nodig is. Init start Windows niet zelf opnieuw op.
 
 ## Standaardbeleid voor lokale Windows-accounts
 

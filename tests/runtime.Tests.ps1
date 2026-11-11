@@ -76,6 +76,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Mock Set-JindaLocalPasswordAgePolicy {}
         Mock Set-JindaBlankPasswordPolicy {}
         Mock Set-JindaBrowserBookmarks {}
+        Mock Uninstall-JindaBundledApps { $false }
         Mock Get-LanRemoteAccessPlan { [pscustomobject]@{ Address='10.20.30.40'; Subnet='10.20.30.0/24' } }
         Mock Invoke-LanRemoteAccessSetup {}
     }
@@ -113,6 +114,22 @@ Describe 'Runtime discovery and Windows language compatibility' {
         }
         Assert-MockCalled Get-LanRemoteAccessPlan -Times 0 -Exactly -Scope It
         Assert-MockCalled Invoke-LanRemoteAccessSetup -Times 0 -Exactly -Scope It
+        Assert-MockCalled Uninstall-JindaBundledApps -Times 0 -Exactly -Scope It
+    }
+
+    It 'runs optional app removal in Windows PowerShell and preserves the restart code' {
+        Mock Uninstall-JindaBundledApps { $true }
+        Mock Invoke-JindaChildProcess { 3010 }
+        Invoke-JindaConfiguration -ScriptPath 'C:\config.ps1' -Keyboard US -RemoveBundledApps | Should Be 3010
+        if ($PSVersionTable.PSEdition -eq 'Desktop') {
+            Assert-MockCalled Uninstall-JindaBundledApps -Times 1 -Exactly -Scope It
+            Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
+        } else {
+            Assert-MockCalled Uninstall-JindaBundledApps -Times 0 -Exactly -Scope It
+            Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
+                $NonInteractive -and $ScriptArguments -contains '-RemoveBundledApps'
+            }
+        }
     }
 
     It 'preserves remote choices when delegating to the noninteractive Windows worker' {

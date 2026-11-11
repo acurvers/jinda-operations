@@ -5,6 +5,56 @@ $projectPath = Split-Path -Parent $PSScriptRoot
 Import-Module International
 Import-Module LanguagePackManagement
 
+Describe 'Optional removal of bundled Windows apps' {
+    BeforeEach {
+        Mock Test-JindaAdministrator { $true }
+        Mock Get-AppxProvisionedPackage {}
+        Mock Get-AppxPackage {}
+        Mock Remove-AppxProvisionedPackage { [pscustomobject]@{ RestartNeeded = $false } }
+        Mock Remove-AppxPackage {}
+    }
+
+    It 'deprovisions only the two targeted apps and removes installed bundle parents once' {
+        Mock Get-AppxProvisionedPackage {
+            [pscustomobject]@{ DisplayName = 'Microsoft.MicrosoftSolitaireCollection'; PackageName = 'SolitaireProvisioned' }
+            [pscustomobject]@{ DisplayName = '7EE7776C.LinkedInforWindows'; PackageName = 'LinkedInProvisioned' }
+            [pscustomobject]@{ DisplayName = 'Microsoft.WindowsCalculator'; PackageName = 'CalculatorProvisioned' }
+        }
+        Mock Get-AppxPackage {
+            $registered = @([pscustomobject]@{ InstallState = 'Installed' })
+            $staged = @([pscustomobject]@{ InstallState = 'Staged' })
+            [pscustomobject]@{ Name = 'Microsoft.MicrosoftSolitaireCollection'; PackageFullName = 'SolitaireBundle'; IsBundle = $true; Version = [version]'4.27'; PackageUserInformation = $registered }
+            [pscustomobject]@{ Name = 'Microsoft.MicrosoftSolitaireCollection'; PackageFullName = 'SolitaireMain'; IsBundle = $false; Version = [version]'4.27'; PackageUserInformation = $registered }
+            [pscustomobject]@{ Name = '7EE7776C.LinkedInforWindows'; PackageFullName = 'LinkedInStaged'; IsBundle = $false; Version = [version]'1.0'; PackageUserInformation = $staged }
+            [pscustomobject]@{ Name = '7EE7776C.LinkedInforWindows'; PackageFullName = 'LinkedInMain'; IsBundle = $false; Version = [version]'2.0'; PackageUserInformation = $registered }
+            [pscustomobject]@{ Name = 'Microsoft.WindowsCalculator'; PackageFullName = 'CalculatorMain'; IsBundle = $false; Version = [version]'1.0'; PackageUserInformation = $registered }
+        }
+
+        Uninstall-JindaBundledApps | Should Be $false
+        Assert-MockCalled Remove-AppxProvisionedPackage -Times 2 -Exactly -Scope It
+        Assert-MockCalled Remove-AppxProvisionedPackage -Times 1 -Exactly -Scope It -ParameterFilter { $Online -and $PackageName -eq 'SolitaireProvisioned' }
+        Assert-MockCalled Remove-AppxProvisionedPackage -Times 1 -Exactly -Scope It -ParameterFilter { $Online -and $PackageName -eq 'LinkedInProvisioned' }
+        Assert-MockCalled Remove-AppxPackage -Times 2 -Exactly -Scope It
+        Assert-MockCalled Remove-AppxPackage -Times 1 -Exactly -Scope It -ParameterFilter { $AllUsers -and $Package -eq 'SolitaireBundle' }
+        Assert-MockCalled Remove-AppxPackage -Times 1 -Exactly -Scope It -ParameterFilter { $AllUsers -and $Package -eq 'LinkedInMain' }
+    }
+
+    It 'returns a restart requirement when deprovisioning reports one' {
+        Mock Get-AppxProvisionedPackage {
+            [pscustomobject]@{ DisplayName = 'Microsoft.MicrosoftSolitaireCollection'; PackageName = 'SolitaireProvisioned' }
+        }
+        Mock Remove-AppxProvisionedPackage { [pscustomobject]@{ RestartNeeded = $true } }
+        Uninstall-JindaBundledApps | Should Be $true
+        Assert-MockCalled Remove-AppxPackage -Times 0 -Exactly -Scope It
+    }
+
+    It 'succeeds without changes when the apps are absent' {
+        Uninstall-JindaBundledApps | Should Be $false
+        Assert-MockCalled Remove-AppxProvisionedPackage -Times 0 -Exactly -Scope It
+        Assert-MockCalled Remove-AppxPackage -Times 0 -Exactly -Scope It
+    }
+}
+
 Describe 'Windows English system defaults' {
     BeforeEach {
         $script:packInstalled = $true
