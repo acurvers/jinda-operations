@@ -326,7 +326,11 @@ function Invoke-JindaInitialization {
     $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
     if ($configCode -ne 0) { throw "Windows configuration failed (exit code $configCode)." }
 
-    Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'
+    if ($installCode -eq 3010) {
+        Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'
+    } else {
+        Write-Host 'Jinda setup completed.'
+    }
     return $installCode
 }
 

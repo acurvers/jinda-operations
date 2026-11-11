@@ -13,6 +13,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
         Mock Test-Path { $script:initEvents.Add("validate:$LiteralPath"); $true }
         Mock Invoke-WebRequest { throw 'Unexpected download' }
+        Mock Write-Host {}
         Mock Get-JindaPowerShell {
             if ($script:initLaunches.Count -eq 0) { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
             else { 'C:\Program Files\PowerShell\7\pwsh.exe' }
@@ -26,6 +27,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'validates both bundled scripts before installing and reselects PowerShell for configuration' {
         Invoke-JindaInitialization | Should Be 0
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed.' }
+        Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like '*Restart Windows*' }
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
         $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
@@ -74,6 +77,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initExitCodes = @(3010, 0)
         Invoke-JindaInitialization | Should Be 3010
         $script:initLaunches.Count | Should Be 2
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed. Restart Windows to apply the changes.' }
     }
 
     It 'does not start configuration after an installation failure' {
