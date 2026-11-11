@@ -8,15 +8,28 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         }
         $script:sshStatus = 'Stopped'
         $script:sshEvents = New-Object 'System.Collections.Generic.List[string]'
+        $script:sshAddresses = @(
+            [pscustomobject]@{ IPAddress = '192.168.50.40'; PrefixLength = 27; InterfaceAlias = 'Ethernet'; AddressState = 'Preferred' }
+        )
+        # NetSecurity exposes the raw CIM fields as named values in Windows PowerShell.
+        $script:sshRule = New-CimInstance -Namespace root/standardcimv2 -ClassName MSFT_NetFirewallRule -ClientOnly -Property @{
+            Enabled = [uint16]1; Profiles = [uint16]0; Direction = [uint16]1
+            Action = [uint16]2; EdgeTraversalPolicy = [uint16]0
+            PrimaryStatus = [uint16]1; EnforcementStatus = [uint16[]]@(1)
+        }
+        Mock Get-NetIPAddress { $script:sshAddresses }
         Mock Get-WindowsCapability { [pscustomobject]@{ State = $script:sshStates[$Name] } }
         Mock Add-WindowsCapability {
             $script:sshStates[$Name] = 'Installed'
             [pscustomobject]@{ RestartNeeded = $false }
         }
         Mock Get-NetFirewallRule { [pscustomobject]@{ Name = 'OpenSSH-Server-In-TCP' } }
-        Mock Get-NetFirewallRule {
-            [pscustomobject]@{ Enabled = 'True'; Profile = 3; Direction = 'Inbound'; Action = 'Allow' }
-        } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
+        Mock Get-NetFirewallRule { $script:sshRule } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
+        Mock Get-NetFirewallAddressFilter {
+            [pscustomobject]@{ LocalAddress = '192.168.50.40'; RemoteAddress = '192.168.50.32/255.255.255.224' }
+        }
+        Mock Get-NetFirewallPortFilter { [pscustomobject]@{ Protocol = 'TCP'; LocalPort = '22' } }
+        Mock Get-NetFirewallInterfaceFilter { [pscustomobject]@{ InterfaceAlias = 'Ethernet' } }
         Mock Set-NetFirewallRule { $script:sshEvents.Add('firewall') }
         Mock New-NetFirewallRule { $script:sshEvents.Add('firewall') }
         Mock Get-Service { [pscustomobject]@{ Status = $script:sshStatus } }
@@ -38,10 +51,12 @@ Describe 'Windows OpenSSH installation and local subnet access' {
             }
         }
         Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Name -eq 'OpenSSH-Server-In-TCP' -and $RemoteAddress -eq 'LocalSubnet' -and
+            $Name -eq 'OpenSSH-Server-In-TCP' -and $PolicyStore -eq 'PersistentStore' -and
+            $RemoteAddress -eq '192.168.50.32/27' -and $LocalAddress -eq '192.168.50.40' -and
+            $InterfaceAlias.Count -eq 1 -and $InterfaceAlias[0].IsMatch('Ethernet') -and
+            -not $InterfaceAlias[0].IsMatch('Ethernet 2') -and $EdgeTraversalPolicy -eq 'Block' -and
             $LocalPort -eq 22 -and $Protocol -eq 'TCP' -and $Action -eq 'Allow' -and
-            $Direction -eq 'Inbound' -and $Enabled -eq 'True' -and
-            [int]$Profile -eq 3 # NetSecurity binds Domain (1) + Private (2) as flags.
+            $Direction -eq 'Inbound' -and $Enabled -eq 'True' -and [string]$Profile -eq 'Any'
         }
         ($script:sshEvents -join ',') | Should Be 'firewall,start'
         Assert-MockCalled Set-Service -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'sshd' -and $StartupType -eq 'Automatic' }
@@ -61,15 +76,35 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Install-JindaOpenSSH | Should Be $false
         Assert-MockCalled Get-NetTCPConnection -Times 3 -Exactly -Scope It
         Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Message -like '*no non-loopback IPv4 listener owned by sshd*'
+            $Message -like '*no IPv4 listener owned by sshd*'
         }
     }
 
     It 'fails when the effective firewall policy disables the rule' {
-        Mock Get-NetFirewallRule {
-            [pscustomobject]@{ Enabled = 'False'; Profile = 3; Direction = 'Inbound'; Action = 'Allow' }
-        } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
+        $script:sshRule.CimInstanceProperties['Enabled'].Value = [uint16]2
         { Install-JindaOpenSSH } | Should Throw 'Active OpenSSH firewall rule'
+    }
+
+    It 'fails when the scoped rule is present but not enforced' {
+        $script:sshRule.CimInstanceProperties['PrimaryStatus'].Value = [uint16]2
+        $script:sshRule.CimInstanceProperties['EnforcementStatus'].Value = [uint16[]]@(5)
+        { Install-JindaOpenSSH } | Should Throw 'not enforced: ProfileInactive'
+    }
+
+    It 'fails if the effective address filter is broader than the selected LAN' {
+        Mock Get-NetFirewallAddressFilter {
+            [pscustomobject]@{ LocalAddress = '192.168.50.40'; RemoteAddress = 'LocalSubnet' }
+        }
+        { Install-JindaOpenSSH } | Should Throw 'does not match the selected LAN'
+    }
+
+    It 'requires an explicit LAN address when several active addresses are present' {
+        $script:sshAddresses += [pscustomobject]@{
+            IPAddress = '10.20.30.40'; PrefixLength = 24; InterfaceAlias = 'Wi-Fi'; AddressState = 'Preferred'
+        }
+        { Install-JindaOpenSSH } | Should Throw 'requires one active IPv4 LAN address'
+        Assert-MockCalled Add-WindowsCapability -Times 0 -Exactly -Scope It
+        Install-JindaOpenSSH -LanIPAddress '192.168.50.40' | Should Be $false
     }
 
     It 'does not reinstall features or restart an already running server' {
@@ -86,8 +121,9 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Mock Get-NetFirewallRule { $null }
         Install-JindaOpenSSH | Should Be $false
         Assert-MockCalled New-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Name -eq 'OpenSSH-Server-In-TCP' -and $RemoteAddress -eq 'LocalSubnet' -and
-            $LocalPort -eq 22 -and [int]$Profile -eq 3
+            $Name -eq 'OpenSSH-Server-In-TCP' -and $RemoteAddress -eq '192.168.50.32/27' -and
+            $LocalAddress -eq '192.168.50.40' -and $InterfaceAlias[0].IsMatch('Ethernet') -and
+            $LocalPort -eq 22 -and [string]$Profile -eq 'Any'
         }
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
     }

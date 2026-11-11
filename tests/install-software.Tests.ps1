@@ -388,11 +388,14 @@ Describe 'Installer entry point preserves the OpenSSH choice' {
     It 'forwards both opt-in and app-skip flags to runtime relaunch and installation' {
         $EnableOpenSSH = $true
         $SkipApps = $true
+        $LanIPAddress = '192.168.50.40'
         & $script:installerEntry
         Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter {
-            ($ScriptArguments -join ' ') -eq '-EnableOpenSSH -SkipApps'
+            ($ScriptArguments -join ' ') -eq '-EnableOpenSSH -SkipApps -LanIPAddress 192.168.50.40'
         }
-        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { $EnableOpenSSH -and $SkipApps }
+        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter {
+            $EnableOpenSSH -and $SkipApps -and $LanIPAddress -eq '192.168.50.40'
+        }
     }
 
     It 'keeps direct installation opt-out by default' {

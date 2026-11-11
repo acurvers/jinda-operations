@@ -39,9 +39,9 @@ hun eigen taalinstelling.
 | Download and install apps? | Ja | Geen gewone apps downloaden/installeren en geen WinGet-herstel; OpenSSH heeft een eigen keuze |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
-| Install OpenSSH client/server and enable SSH on private/domain local subnets? | Nee | OpenSSH-installatie, service en firewall blijven ongemoeid |
+| Install OpenSSH client/server and enable SSH on the selected LAN? | Nee | OpenSSH-installatie, service en firewall blijven ongemoeid |
 
-Bij een RDP/WinRM-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
+Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
 Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vragen.
 De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
@@ -54,8 +54,7 @@ netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te v
 OpenSSH heeft een eigen keuze, onafhankelijk van apps installeren, RDP en WinRM.
 Met apps **N** en OpenSSH **Y** worden alleen de SSH-onderdelen geinstalleerd;
 WinGet en de andere apps worden overgeslagen. Daarna volgt de normale Windows-configuratie.
-SSH gebruikt de bestaande firewallafbakening `LocalSubnet` op Private/Domain;
-de aparte IPv4/LAN-keuze is alleen nodig voor RDP en WinRM.
+RDP, WinRM en SSH gebruiken dezelfde LAN-keuze.
 
 ## Optioneel WinGet-herstel
 
@@ -242,10 +241,10 @@ OpenSSH wordt via de ingebouwde Windows-onderdelen geinstalleerd, met
 hetzelfde commando voor `OpenSSH.Server~~~~0.0.1.0`. Reeds aanwezige onderdelen
 worden overgeslagen; verdere updates lopen via Windows Update. De service `sshd`
 wordt gestart en op automatisch starten gezet. De standaardfirewallregel
-`OpenSSH-Server-In-TCP` wordt begrensd tot TCP 22, `LocalSubnet` en de profielen
-Private/Domain, voordat de service start. Openbare netwerkprofielen worden niet
-opengesteld of gewijzigd. Andere bestaande firewallregels blijven ongemoeid;
-die kunnen eventueel afzonderlijk toegang toestaan.
+`OpenSSH-Server-In-TCP` staat TCP 22 toe op de gekozen adapter en het
+bijbehorende lokale IPv4-adres, met het gekozen IPv4-subnet als bron. De
+regel geldt op alle netwerkprofielen, waaronder Public. Het netwerkprofiel
+van de adapter blijft zoals Windows het heeft ingesteld.
 
 Gebruik een bestaand Windows-account met wachtwoord (geen Windows Hello-pincode)
 of een al ingestelde SSH-sleutel. Er worden geen accounts of sleutels toegevoegd
@@ -254,15 +253,16 @@ SSH-poorten blijft die configuratie gelden, maar deze firewallregel betreft alle
 Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
 nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
 Na het starten van `sshd` toont de installer de luisteraars op TCP 22 en de
-actieve firewallregel. Hij waarschuwt als `sshd` op die poort geen IPv4-luisteraar
-buiten loopback heeft. Een ontbrekende of afwijkende actieve firewallregel
-geeft een fout.
+actieve firewallregel. Hij waarschuwt als `sshd` op die poort niet op het
+gekozen IPv4-adres luistert. De installer geeft een fout als de effectieve
+firewallregel afwijkt of Windows de regel niet toepast.
 
 Alleen **Y** bij de OpenSSH-vraag voert deze stap uit. **N** slaat hem over en
 deactiveert geen eerder ingerichte SSH-service. `Windows.OpenSSH` activeren in
 `skip-apps.conf` slaat de stap ook bij **Y** over, met een melding in de uitvoer.
 Rechtstreeks `install-software.ps1` uitvoeren installeert standaard geen OpenSSH;
 gebruik daarvoor expliciet `-EnableOpenSSH`, eventueel met `-SkipApps` voor alleen SSH.
+Geef bij meerdere actieve LAN-adressen ook `-LanIPAddress <actief-IPv4-adres>` mee.
 Het deelscript stelt geen vragen; de y/n-vraag staat vooraf in `init.ps1`.
 De RDP/WinRM-keuzes regelen afzonderlijke protocollen.
 Bron: [Microsoft: OpenSSH voor Windows](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).

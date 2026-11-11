@@ -13,6 +13,9 @@ Failures for all other apps stop installation.
 .PARAMETER EnableOpenSSH
 Opt in to installing OpenSSH client/server and enabling the SSH service and LAN firewall rule.
 Without this switch, existing OpenSSH installation and settings are left unchanged.
+.PARAMETER LanIPAddress
+Select the active IPv4 address for the OpenSSH firewall rule. If omitted, exactly
+one active IPv4 LAN address must be available.
 .PARAMETER SkipApps
 Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-only installation.
 #>
@@ -20,6 +23,7 @@ Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-onl
 param(
     [switch]$EnableOpenSSH,
     [switch]$SkipApps,
+    [string]$LanIPAddress,
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -259,8 +263,37 @@ function Install-JindaYodeck {
     }
 }
 
+function Get-JindaOpenSSHLan {
+    param([string]$Address)
+
+    $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object {
+        $_.AddressState -eq 'Preferred' -and $_.PrefixLength -ge 1 -and $_.PrefixLength -le 30 -and
+        $_.IPAddress -notmatch '^(127\.|169\.254\.|0\.)' -and
+        (-not $Address -or $_.IPAddress -eq $Address)
+    })
+    if ($addresses.Count -ne 1) {
+        throw 'OpenSSH requires one active IPv4 LAN address. Select the LAN in init.ps1 or pass -LanIPAddress.'
+    }
+    $lan = $addresses[0]
+    $network = ([Net.IPAddress]$lan.IPAddress).GetAddressBytes()
+    $mask = New-Object byte[] 4
+    for ($index = 0; $index -lt 4; $index++) {
+        $bits = [Math]::Min(8, [Math]::Max(0, $lan.PrefixLength - 8 * $index))
+        $mask[$index] = (255 -shl (8 - $bits)) -band 255
+        $network[$index] = $network[$index] -band $mask[$index]
+    }
+    $networkAddress = $network -join '.'
+    [pscustomobject]@{
+        Address = $lan.IPAddress
+        InterfaceAlias = $lan.InterfaceAlias
+        InterfacePattern = [System.Management.Automation.WildcardPattern]::Escape($lan.InterfaceAlias)
+        Subnet = "$networkAddress/$($lan.PrefixLength)"
+        SubnetWithMask = "$networkAddress/$($mask -join '.')"
+    }
+}
+
 function Test-JindaOpenSSHSetup {
-    param([string]$RuleName)
+    param([string]$RuleName, $Lan)
 
     $service = Get-CimInstance -ClassName Win32_Service -Filter "Name = 'sshd'" -ErrorAction Stop
     $sshListeners = @()
@@ -273,7 +306,7 @@ function Test-JindaOpenSSHSetup {
         }
         $sshListeners = @($listeners | Where-Object {
             $service.ProcessId -gt 0 -and $_.OwningProcess -eq $service.ProcessId -and
-            $_.LocalAddress -notmatch ':' -and $_.LocalAddress -notlike '127.*'
+            $_.LocalAddress -in @('0.0.0.0', $Lan.Address)
         })
         if ($sshListeners.Count -gt 0) { break }
         if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
@@ -282,29 +315,39 @@ function Test-JindaOpenSSHSetup {
         $listeners | Select-Object LocalAddress, LocalPort, State, OwningProcess | Format-Table -AutoSize | Out-Host
     }
     if ($sshListeners.Count -gt 0) {
-        Write-Host 'SUCCESS: sshd is listening on IPv4 TCP port 22.'
+        Write-Host "SUCCESS: sshd is listening on IPv4 TCP port 22 for $($Lan.Address)."
     } else {
-        Write-Warning 'sshd is running, but no non-loopback IPv4 listener owned by sshd was found on TCP 22. Check Port and ListenAddress in sshd_config.'
+        Write-Warning "sshd is running, but no IPv4 listener owned by sshd was found on TCP 22 for $($Lan.Address). Check Port and ListenAddress in sshd_config."
     }
 
     $rule = Get-NetFirewallRule -PolicyStore ActiveStore -Name $RuleName -ErrorAction Stop
-    $rule | Select-Object Enabled, Profile, Direction, Action | Format-Table -AutoSize | Out-Host
-    # NetSecurity uses profile flags Domain (1) and Private (2).
-    if ([string]$rule.Enabled -ne 'True' -or [int]$rule.Profile -ne 3 -or
-        $rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Allow') {
-        throw "Active OpenSSH firewall rule $RuleName must be enabled, inbound, allow traffic, and apply to Domain and Private profiles."
+    $rule | Select-Object Enabled, Profile, Direction, Action, EnforcementStatus | Format-Table -AutoSize | Out-Host
+    $addressFilter = Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
+    $portFilter = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
+    $interfaceFilter = Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
+    if ([string]$rule.Enabled -ne 'True' -or [string]$rule.Profile -ne 'Any' -or
+        $rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Allow' -or $rule.EdgeTraversalPolicy -ne 'Block' -or
+        [string]$portFilter.Protocol -notin @('TCP', '6') -or [string]$portFilter.LocalPort -ne '22' -or
+        [string]$addressFilter.LocalAddress -notin @($Lan.Address, "$($Lan.Address)/32", "$($Lan.Address)/255.255.255.255") -or
+        [string]$addressFilter.RemoteAddress -notin @($Lan.Subnet, $Lan.SubnetWithMask) -or
+        [string]$interfaceFilter.InterfaceAlias -notin @($Lan.InterfaceAlias, $Lan.InterfacePattern)) {
+        throw "Active OpenSSH firewall rule $RuleName does not match the selected LAN and TCP port 22."
     }
-    Write-Host 'SUCCESS: the active OpenSSH firewall rule allows inbound access on Domain and Private profiles.'
+    if ($rule.PrimaryStatus -ne 'OK' -or @($rule.EnforcementStatus) -notcontains 'Enforced') {
+        throw "OpenSSH firewall rule $RuleName is configured but not enforced: $($rule.EnforcementStatus -join ', ')."
+    }
+    Write-Host "SUCCESS: the SSH firewall rule is enforced on $($Lan.InterfaceAlias) for $($Lan.Address) from $($Lan.Subnet)."
 }
 
 function Install-JindaOpenSSH {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param()
+    param([string]$LanIPAddress)
 
     # Use Microsoft's in-box features, serviced by Windows Update, not a preview MSI.
     # https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
-    if (-not $PSCmdlet.ShouldProcess('Windows OpenSSH client and server', 'Install and enable SSH on private/domain local subnets (TCP 22)')) { return $false }
+    if (-not $PSCmdlet.ShouldProcess('Windows OpenSSH client and server', 'Install and enable SSH on the selected LAN (TCP 22)')) { return $false }
     $ErrorActionPreference = 'Stop'
+    $lan = Get-JindaOpenSSHLan -Address $LanIPAddress
     $restartNeeded = $false
     foreach ($name in @('OpenSSH.Client~~~~0.0.1.0', 'OpenSSH.Server~~~~0.0.1.0')) {
         $capability = Get-WindowsCapability -Online -Name $name -ErrorAction Stop
@@ -329,11 +372,14 @@ function Install-JindaOpenSSH {
     # The Windows feature normally creates a broad rule. Restrict that same rule
     # before starting sshd; do not create a second rule alongside an unrestricted one.
     $ruleName = 'OpenSSH-Server-In-TCP'
-    $rule = Get-NetFirewallRule -Name $ruleName -ErrorAction SilentlyContinue
+    $rule = Get-NetFirewallRule -PolicyStore PersistentStore -Name $ruleName -ErrorAction SilentlyContinue
     $ruleSettings = @{
+        PolicyStore = 'PersistentStore'
         Enabled = 'True'; Direction = 'Inbound'; Action = 'Allow'
-        Protocol = 'TCP'; LocalPort = 22; RemoteAddress = 'LocalSubnet'
-        Profile = @('Private', 'Domain')
+        Protocol = 'TCP'; LocalPort = 22
+        Profile = 'Any'; EdgeTraversalPolicy = 'Block'
+        LocalAddress = $lan.Address; RemoteAddress = $lan.Subnet
+        InterfaceAlias = $lan.InterfacePattern
     }
     if ($rule) {
         Set-NetFirewallRule -Name $ruleName @ruleSettings -ErrorAction Stop | Out-Null
@@ -350,7 +396,7 @@ function Install-JindaOpenSSH {
     if ((Get-Service -Name sshd -ErrorAction Stop).Status -ne 'Running') {
         throw 'OpenSSH is installed, but the sshd service is not running.'
     }
-    Test-JindaOpenSSHSetup -RuleName $ruleName
+    Test-JindaOpenSSHSetup -RuleName $ruleName -Lan $lan
     Write-Host 'OpenSSH is installed and sshd is configured to start with Windows.'
     Write-Host 'Use an existing Windows account and its password or configured SSH key. Existing SSH configuration and keys are preserved.'
     return $false
@@ -423,7 +469,7 @@ function Get-JindaSkippedApps {
 
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param([switch]$EnableOpenSSH, [switch]$SkipApps)
+    param([switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress)
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
@@ -480,7 +526,7 @@ function Install-JindaSoftware {
 
     foreach ($package in $packages) {
         if ($package.Source -eq 'windows-capability') {
-            if (Install-JindaOpenSSH -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
+            if (Install-JindaOpenSSH -LanIPAddress $LanIPAddress -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
             continue
         }
         if ($package.Source -eq 'yodeck') {
@@ -531,8 +577,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         $scriptArguments = @()
         if ($EnableOpenSSH) { $scriptArguments += '-EnableOpenSSH' }
         if ($SkipApps) { $scriptArguments += '-SkipApps' }
+        if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps) { return 3010 }
+            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -LanIPAddress $LanIPAddress) { return 3010 }
             return 0
         }
         exit $exitCode

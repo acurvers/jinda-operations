@@ -19,7 +19,7 @@ Describe 'Choices are collected once before unattended setup' {
         $script:prompts[0] | Should Be 'Download and install apps? [Y/n]'
         $script:prompts[1] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
         $script:prompts[2] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
-        $script:prompts[3] | Should Be 'Install OpenSSH client/server and enable SSH on private/domain local subnets? (N = skip; leave existing settings unchanged) [y/N]'
+        $script:prompts[3] | Should Be 'Install OpenSSH client/server and enable SSH on the selected LAN? (N = skip; leave existing settings unchanged) [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 
@@ -38,6 +38,12 @@ Describe 'Choices are collected once before unattended setup' {
         foreach ($answer in @('maybe', ' JA ')) { $script:answers.Enqueue($answer) }
         Read-JindaYesNo -Prompt 'Test' | Should Be $true
         $script:prompts.Count | Should Be 2
+    }
+
+    It 'selects the LAN when SSH is the only remote access option' {
+        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH Yes
+        $options.LanIPAddress | Should Be '10.20.30.40'
+        Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
     }
 
     It 'uses explicit parameter choices without prompts' {

@@ -18,7 +18,7 @@ Ask (default), Yes or No. Enables Remote Desktop for the selected LAN and WireGu
 .PARAMETER PowerShellRemoting
 Ask (default), Yes or No. Enables Windows PowerShell remoting (WinRM).
 .PARAMETER OpenSSH
-Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on private/domain local subnets.
+Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on the selected IPv4 LAN.
 The question defaults to No and is independent of the apps choice.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
@@ -242,7 +242,7 @@ function Select-JindaLanAddress {
     elseif ($candidates.Count -eq 0) { throw 'No active IPv4 LAN found. Nothing has been installed or configured.' }
     elseif ($candidates.Count -eq 1) { $selected = @($candidates[0]) }
     else {
-        Write-Host 'Select the LAN where Remote Desktop/WinRM should be accessible:'
+        Write-Host 'Select the LAN for the enabled remote access options:'
         for ($i = 0; $i -lt $candidates.Count; $i++) {
             Write-Host ('{0}: {1} - {2}/{3}' -f ($i + 1), $candidates[$i].InterfaceAlias, $candidates[$i].IPAddress, $candidates[$i].PrefixLength)
         }
@@ -269,9 +269,9 @@ function Get-JindaSetupOptions {
     $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
-    $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH client/server and enable SSH on private/domain local subnets? (N = skip; leave existing settings unchanged)' -Choice $OpenSSH
+    $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH client/server and enable SSH on the selected LAN? (N = skip; leave existing settings unchanged)' -Choice $OpenSSH
     $address = ''
-    if ($rdp -or $winrm) { $address = Select-JindaLanAddress -Address $LanIPAddress }
+    if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{ InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm; OpenSSH = $ssh; LanIPAddress = $address }
 }
 
@@ -309,7 +309,7 @@ function Invoke-JindaInitialization {
     if ($options.InstallApps -or $options.OpenSSH) {
         if ($RepairWinGet -and $options.InstallApps) { Repair-JindaWinGet }
         $installArguments = @()
-        if ($options.OpenSSH) { $installArguments += '-EnableOpenSSH' }
+        if ($options.OpenSSH) { $installArguments += @('-EnableOpenSSH', '-LanIPAddress', $options.LanIPAddress) }
         if (-not $options.InstallApps) { $installArguments += '-SkipApps' }
         Write-Host 'Step 1/2: installing the selected software components.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive
@@ -322,7 +322,9 @@ function Invoke-JindaInitialization {
     $configArguments = @('-Keyboard', $Keyboard)
     if ($options.RemoteDesktop) { $configArguments += '-EnableRemoteDesktop' }
     if ($options.PowerShellRemoting) { $configArguments += '-EnableWinRM' }
-    if ($options.LanIPAddress) { $configArguments += @('-LanIPAddress', $options.LanIPAddress) }
+    if ($options.RemoteDesktop -or $options.PowerShellRemoting) {
+        $configArguments += @('-LanIPAddress', $options.LanIPAddress)
+    }
     $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
     if ($configCode -ne 0) { throw "Windows configuration failed (exit code $configCode)." }
 

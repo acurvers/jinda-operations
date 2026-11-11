@@ -133,12 +133,12 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'can enable only SSH without app installation or WinGet repair' {
         Mock Get-JindaSetupOptions {
-            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }
+            [pscustomobject]@{ InstallApps = $false; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '10.20.30.40' }
         }
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
         $script:initLaunches.Count | Should Be 2
         $script:initLaunches[0].Path | Should Match 'install-software.ps1$'
-        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -SkipApps'
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -LanIPAddress 10.20.30.40 -SkipApps'
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational'
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
         Assert-MockCalled Test-Path -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*skip-apps.conf' }
@@ -146,10 +146,10 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'passes SSH opt-in to the installer alongside ordinary apps' {
         Mock Get-JindaSetupOptions {
-            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '' }
+            [pscustomobject]@{ InstallApps = $true; RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $true; LanIPAddress = '10.20.30.40' }
         }
         Invoke-JindaInitialization | Should Be 0
-        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH'
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-EnableOpenSSH -LanIPAddress 10.20.30.40'
     }
 
     It 'rejects a missing installer before an SSH-only run' {
