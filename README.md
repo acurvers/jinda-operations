@@ -252,6 +252,11 @@ en `sshd_config` blijft behouden; de standaardpoort is 22. Bij bestaande afwijke
 SSH-poorten blijft die configuratie gelden, maar deze firewallregel betreft alleen 22.
 Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
 nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
+Na het starten van `sshd` toont de installer de luisteraars op TCP 22 en de
+actieve firewallregel. Hij waarschuwt als `sshd` op die poort geen IPv4-luisteraar
+buiten loopback heeft. Een ontbrekende of afwijkende actieve firewallregel
+geeft een fout.
+
 Alleen **Y** bij de OpenSSH-vraag voert deze stap uit. **N** slaat hem over en
 deactiveert geen eerder ingerichte SSH-service. `Windows.OpenSSH` activeren in
 `skip-apps.conf` slaat de stap ook bij **Y** over, met een melding in de uitvoer.

@@ -259,6 +259,44 @@ function Install-JindaYodeck {
     }
 }
 
+function Test-JindaOpenSSHSetup {
+    param([string]$RuleName)
+
+    $service = Get-CimInstance -ClassName Win32_Service -Filter "Name = 'sshd'" -ErrorAction Stop
+    $sshListeners = @()
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            $listeners = @(Get-NetTCPConnection -State Listen -LocalPort 22 -ErrorAction Stop)
+        } catch {
+            if ($_.CategoryInfo.Category -ne 'ObjectNotFound') { throw }
+            $listeners = @()
+        }
+        $sshListeners = @($listeners | Where-Object {
+            $service.ProcessId -gt 0 -and $_.OwningProcess -eq $service.ProcessId -and
+            $_.LocalAddress -notmatch ':' -and $_.LocalAddress -notlike '127.*'
+        })
+        if ($sshListeners.Count -gt 0) { break }
+        if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
+    }
+    if ($listeners.Count -gt 0) {
+        $listeners | Select-Object LocalAddress, LocalPort, State, OwningProcess | Format-Table -AutoSize | Out-Host
+    }
+    if ($sshListeners.Count -gt 0) {
+        Write-Host 'SUCCESS: sshd is listening on IPv4 TCP port 22.'
+    } else {
+        Write-Warning 'sshd is running, but no non-loopback IPv4 listener owned by sshd was found on TCP 22. Check Port and ListenAddress in sshd_config.'
+    }
+
+    $rule = Get-NetFirewallRule -PolicyStore ActiveStore -Name $RuleName -ErrorAction Stop
+    $rule | Select-Object Enabled, Profile, Direction, Action | Format-Table -AutoSize | Out-Host
+    # NetSecurity uses profile flags Domain (1) and Private (2).
+    if ([string]$rule.Enabled -ne 'True' -or [int]$rule.Profile -ne 3 -or
+        $rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Allow') {
+        throw "Active OpenSSH firewall rule $RuleName must be enabled, inbound, allow traffic, and apply to Domain and Private profiles."
+    }
+    Write-Host 'SUCCESS: the active OpenSSH firewall rule allows inbound access on Domain and Private profiles.'
+}
+
 function Install-JindaOpenSSH {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -312,7 +350,8 @@ function Install-JindaOpenSSH {
     if ((Get-Service -Name sshd -ErrorAction Stop).Status -ne 'Running') {
         throw 'OpenSSH is installed, but the sshd service is not running.'
     }
-    Write-Host 'OpenSSH client and server are available. SSH starts with Windows; TCP 22 is allowed from local subnets on Private/Domain networks.'
+    Test-JindaOpenSSHSetup -RuleName $ruleName
+    Write-Host 'OpenSSH is installed and sshd is configured to start with Windows.'
     Write-Host 'Use an existing Windows account and its password or configured SSH key. Existing SSH configuration and keys are preserved.'
     return $false
 }

@@ -14,11 +14,20 @@ Describe 'Windows OpenSSH installation and local subnet access' {
             [pscustomobject]@{ RestartNeeded = $false }
         }
         Mock Get-NetFirewallRule { [pscustomobject]@{ Name = 'OpenSSH-Server-In-TCP' } }
+        Mock Get-NetFirewallRule {
+            [pscustomobject]@{ Enabled = 'True'; Profile = 3; Direction = 'Inbound'; Action = 'Allow' }
+        } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
         Mock Set-NetFirewallRule { $script:sshEvents.Add('firewall') }
         Mock New-NetFirewallRule { $script:sshEvents.Add('firewall') }
         Mock Get-Service { [pscustomobject]@{ Status = $script:sshStatus } }
         Mock Set-Service {}
         Mock Start-Service { $script:sshEvents.Add('start'); $script:sshStatus = 'Running' }
+        Mock Get-CimInstance { [pscustomobject]@{ ProcessId = 42 } }
+        Mock Get-NetTCPConnection {
+            [pscustomobject]@{ LocalAddress = '0.0.0.0'; LocalPort = 22; State = 'Listen'; OwningProcess = 42 }
+        }
+        Mock Start-Sleep {}
+        Mock Write-Warning {}
     }
 
     It 'installs both stable Windows features without rebooting and scopes the standard rule before starting SSH' {
@@ -37,6 +46,30 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         ($script:sshEvents -join ',') | Should Be 'firewall,start'
         Assert-MockCalled Set-Service -Times 1 -Exactly -Scope It -ParameterFilter { $Name -eq 'sshd' -and $StartupType -eq 'Automatic' }
         Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetTCPConnection -Times 1 -Exactly -Scope It -ParameterFilter {
+            $State -eq 'Listen' -and $LocalPort -eq 22
+        }
+        Assert-MockCalled Get-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
+            $PolicyStore -eq 'ActiveStore' -and $Name -eq 'OpenSSH-Server-In-TCP'
+        }
+    }
+
+    It 'warns when the IPv4 listener on TCP 22 belongs to a different process' {
+        Mock Get-NetTCPConnection {
+            [pscustomobject]@{ LocalAddress = '0.0.0.0'; LocalPort = 22; State = 'Listen'; OwningProcess = 99 }
+        }
+        Install-JindaOpenSSH | Should Be $false
+        Assert-MockCalled Get-NetTCPConnection -Times 3 -Exactly -Scope It
+        Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Message -like '*no non-loopback IPv4 listener owned by sshd*'
+        }
+    }
+
+    It 'fails when the effective firewall policy disables the rule' {
+        Mock Get-NetFirewallRule {
+            [pscustomobject]@{ Enabled = 'False'; Profile = 3; Direction = 'Inbound'; Action = 'Allow' }
+        } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
+        { Install-JindaOpenSSH } | Should Throw 'Active OpenSSH firewall rule'
     }
 
     It 'does not reinstall features or restart an already running server' {
