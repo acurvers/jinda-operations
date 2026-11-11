@@ -36,6 +36,7 @@ Describe 'All requested Jinda applications' {
         $script:wingetUpgradeExitCode = 0
         $script:wingetSourceExitCode = 0
         $script:localIndexVersion = '2026.1111.1420.27'
+        $script:windowsSessionId = 1
         $script:wingetExitCodes = @(0) * 20
         $script:throwChrome = $false
         Mock Get-JindaSkippedApps { @() }
@@ -43,6 +44,7 @@ Describe 'All requested Jinda applications' {
         Mock Install-JindaOpenSSH { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
+        Mock Get-Process { [pscustomobject]@{ SessionId = $script:windowsSessionId } } -ParameterFilter { $Id -contains $PID }
         Mock Invoke-WebRequest { throw 'Unexpected web request' }
         Mock Invoke-WebRequest { [pscustomobject]@{ Headers = @{ 'x-ms-meta-sourceversion' = @('2026.1111.1420.27') } } } -ParameterFilter {
             $Uri -eq 'https://cdn.winget.microsoft.com/cache/source2.msix' -and $Method -eq 'Head'
@@ -50,6 +52,8 @@ Describe 'All requested Jinda applications' {
         Mock Get-AppxPackage {
             [pscustomobject]@{ PackageFamilyName = 'Microsoft.Winget.Source_8wekyb3d8bbwe'; Version = [version]$script:localIndexVersion }
         } -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Mock Add-AppxPackage { throw 'Unexpected AppX registration' }
+        Mock Remove-Item {} -ParameterFilter { $LiteralPath -like '*jinda-winget-source-*.msix' }
     }
 
     It 'refreshes the source, accepts an already-current index and upgrades WinGet before the apps' {
@@ -70,6 +74,7 @@ Describe 'All requested Jinda applications' {
             ($call -contains $flag) | Should Be $false
         }
         $script:wingetCalls.Count | Should Be 20
+        Assert-MockCalled Add-AppxPackage -Times 0 -Exactly -Scope It
     }
 
     It 'reads the registered version after updating and accepts an index ahead of the original CDN response' {
@@ -100,6 +105,42 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 0
         Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        Assert-MockCalled Add-AppxPackage -Times 0 -Exactly -Scope It
+    }
+
+    It 'registers the official source in a service session and verifies it before installing apps' {
+        $script:windowsSessionId = 0
+        $script:localIndexVersion = '2026.1108.1134.26'
+        Mock Invoke-WebRequest {} -ParameterFilter {
+            $Uri -eq 'https://cdn.winget.microsoft.com/cache/source2.msix' -and $OutFile -like '*jinda-winget-source-*.msix'
+        }
+        Mock Add-AppxPackage { $script:localIndexVersion = '2026.1111.1420.27' }
+        Install-JindaSoftware | Should Be $false
+        Assert-MockCalled Add-AppxPackage -Times 1 -Exactly -Scope It -ParameterFilter { $Path -like '*jinda-winget-source-*.msix' }
+        Assert-MockCalled Get-AppxPackage -Times 2 -Exactly -Scope It -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Assert-MockCalled Remove-Item -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*jinda-winget-source-*.msix' }
+        $script:wingetCalls.Count | Should Be 19
+    }
+
+    It 'stops and removes the temporary package when source registration fails' {
+        $script:windowsSessionId = 0
+        $script:localIndexVersion = '2026.1108.1134.26'
+        Mock Invoke-WebRequest {} -ParameterFilter { $OutFile -like '*jinda-winget-source-*.msix' }
+        Mock Add-AppxPackage { throw 'Simulated AppX error' }
+        { Install-JindaSoftware } | Should Throw 'Simulated AppX error'
+        Assert-MockCalled Remove-Item -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*jinda-winget-source-*.msix' }
+        $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetCalls.Count | Should Be 0
+    }
+
+    It 'stops if source registration returns without updating the index' {
+        $script:windowsSessionId = 0
+        $script:localIndexVersion = '2026.1108.1134.26'
+        Mock Invoke-WebRequest {} -ParameterFilter { $OutFile -like '*jinda-winget-source-*.msix' }
+        Mock Add-AppxPackage {}
+        { Install-JindaSoftware } | Should Throw 'The local WinGet index (2026.1108.1134.26) is older'
+        $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetCalls.Count | Should Be 0
     }
 
     It 'aborts when the offered index version cannot be obtained' {
@@ -378,8 +419,40 @@ Describe 'All requested Jinda applications' {
         $script:appOrder.Count | Should Be 21
     }
 
+    It 'skips Store apps with sign-in errors and continues with other apps' {
+        $script:wingetExitCodes[14] = -2147023584
+        $script:wingetExitCodes[19] = -1978335114
+        Install-JindaSoftware -WarningVariable warnings | Should Be $false
+        ($warnings -join ' ') | Should Match 'ChatGPT Classic:.*0x80070520'
+        ($warnings -join ' ') | Should Match 'WhatsApp:.*0x8A150076'
+        ($warnings -join ' ') | Should Match 'Apps skipped because a sign-in session was unavailable: ChatGPT Classic, WhatsApp\.'
+        $script:wingetCalls.Count | Should Be 20
+        Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
+    }
+
+    It 'keeps a sign-in error fatal for an app outside the Store source' {
+        $script:wingetExitCodes[15] = -2147023584
+        { Install-JindaSoftware } | Should Throw 'WinGet failed (exit code -2147023584 / 0x80070520)'
+        $script:wingetCalls.Count | Should Be 16
+    }
+
+    It 'skips Codex desktop in session zero and still attempts the other apps' {
+        $script:windowsSessionId = 0
+        Install-JindaSoftware -WarningVariable warnings | Should Be $false
+        ($warnings -join ' ') | Should Match 'Codex desktop.*installation requires an interactive Windows session'
+        ($script:appOrder -contains 'OpenAI.ChatGPT') | Should Be $false
+        $script:wingetCalls.Count | Should Be 19
+        $script:appOrder[-1] | Should Be '9NKSQGP7F2NH'
+    }
+
+    It 'keeps the MSIX deployment error fatal in an interactive session' {
+        $script:wingetExitCodes[15] = -2147009255
+        { Install-JindaSoftware } | Should Throw 'WinGet failed (exit code -2147009255 / 0x80073D19)'
+        $script:wingetCalls.Count | Should Be 16
+    }
+
     It 'preserves a fatal WhatsApp error after every other app has been attempted' {
-        $script:wingetExitCodes[19] = -2147023584
+        $script:wingetExitCodes[19] = -1978335217
         { Install-JindaSoftware } | Should Throw 'WhatsApp: WinGet failed'
         $script:wingetCalls.Count | Should Be 20
         ($script:appOrder | Select-Object -Last 10) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'

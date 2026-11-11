@@ -102,10 +102,13 @@ Init vraagt eenmaal om beheerrechten; de twee deelscripts erven die rechten.
 Start je al in een administratorvenster, dan volgt geen extra UAC-vraag.
 De startopdracht downloadt eerst het complete scriptpakket. Init voert de scripts daarna een voor een uit.
 Bij een mislukte download wordt niets geinstalleerd of geconfigureerd.
-Alleen een fout bij Google Chrome geeft een waarschuwing en laat de overige apps
-en configuratie doorgaan. Chrome wordt wel geprobeerd. Bij een fout in een andere
-app stopt de installatie en start de configuratie niet. Een software-exitcode
-3010 (herstart nodig) laat de configuratie doorgaan. Als de installatie of configuratie
+Een fout bij Google Chrome geeft een waarschuwing en laat de overige apps en
+configuratie doorgaan. WinGet probeert Store-apps stil te installeren in de
+huidige Windows-sessie. Bij een bekende Store-aanmeldfout slaat het script alleen
+de betreffende app over en noemt die in een waarschuwing. In Windows-servicesessie
+0 (zoals via SSH) slaat het script ook Codex desktop over, omdat de MSIX-installatie
+een interactieve Windows-sessie vereist. Andere installatiefouten breken de setup af.
+Een software-exitcode 3010 (herstart nodig) laat de configuratie doorgaan. Als de installatie of configuratie
 3010 teruggeeft, meldt init aan het eind dat een herstart nodig is. Init start Windows niet zelf opnieuw op.
 
 ## Standaardbeleid voor lokale Windows-accounts
@@ -209,8 +212,11 @@ overgeslagen.
 Voor de apps ververst het installatiescript de bron met `winget source update --name winget`.
 Het controleert daarna of de geregistreerde pakketindex minstens zo nieuw is als de
 versie die Microsoft aan het begin van de controle aanbiedt. Een actuele index is
-voldoende. Bij een bronfout of een achterblijvende of oncontroleerbare index stopt
-setup vóór de app-installatie en de Windows-configuratie.
+voldoende. Als WinGet in een achtergrondsessie succes meldt terwijl de index
+achterblijft, registreert setup het officiële Microsoft-bronpakket voor het
+uitvoerende account en controleert de versie opnieuw. Bij een bronfout of een
+achterblijvende of oncontroleerbare index stopt setup vóór de app-installatie
+en de Windows-configuratie.
 
 Daarna werkt het installatiescript WinGet zelf bij via
 `winget upgrade --id Microsoft.AppInstaller --exact --source winget`.
@@ -249,7 +255,7 @@ apps vallen onder de optionele keuze. `skip-apps.conf` geldt voor beide groepen.
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
 | WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 
-WhatsApp wordt als laatste app geprobeerd, na Yodeck. Bij een fout stopt het script nog steeds en start de configuratie niet.
+WhatsApp wordt als laatste app geprobeerd, na Yodeck. Dezelfde afhandeling voor Store-aanmeldfouten geldt voor WhatsApp.
 
 OpenSSH wordt via de ingebouwde Windows-onderdelen geinstalleerd, met
 `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0` en

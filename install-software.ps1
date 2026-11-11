@@ -554,7 +554,7 @@ function Get-JindaSoftwarePackages {
         @{ Id = 'ScooterSoftware.BeyondCompare.5'; Name = 'Beyond Compare 5'; Source = 'winget'; Scope = 'machine'; Extra = @('--locale', 'en') }
         @{ Id = '9NT1R1C2HH7J'; Name = 'ChatGPT Classic'; Source = 'msstore'; Scope = ''; Extra = @() }
         # The Codex desktop app is now named ChatGPT; OpenAI.Codex is the separate CLI.
-        @{ Id = 'OpenAI.ChatGPT'; Name = 'Codex desktop (ChatGPT)'; Source = 'winget'; Scope = ''; Extra = @('--installer-type', 'msix') }
+        @{ Id = 'OpenAI.ChatGPT'; Name = 'Codex desktop (ChatGPT)'; Source = 'winget'; Scope = ''; Extra = @('--installer-type', 'msix'); RequiresInteractiveSession = $true }
         @{ Id = 'OpenWhisperSystems.Signal'; Name = 'Signal'; Source = 'winget'; Scope = 'user'; Extra = @() }
         @{ Id = 'OBSProject.OBSStudio'; Name = 'OBS Studio'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Adobe.Acrobat.Reader.64-bit'; Name = 'Adobe Acrobat Reader'; Source = 'winget'; Scope = 'machine'; Extra = @() }
@@ -594,6 +594,13 @@ function Get-JindaSkippedApps {
     return $skipped
 }
 
+function Get-JindaWinGetIndexVersion {
+    Get-AppxPackage -Name 'Microsoft.Winget.Source' -ErrorAction Stop |
+        Where-Object PackageFamilyName -eq 'Microsoft.Winget.Source_8wekyb3d8bbwe' |
+        ForEach-Object { [version]$_.Version } |
+        Sort-Object -Descending | Select-Object -First 1
+}
+
 function Update-JindaWinGetSource {
     param([string]$WingetPath)
 
@@ -616,11 +623,20 @@ function Update-JindaWinGetSource {
             throw "WinGet source update failed (exit code $updateExitCode / 0x$exitCodeHex)."
         }
 
-        # WinGet can report a successful refresh while the old source package remains registered.
-        $localVersion = Get-AppxPackage -Name 'Microsoft.Winget.Source' -ErrorAction Stop |
-            Where-Object PackageFamilyName -eq 'Microsoft.Winget.Source_8wekyb3d8bbwe' |
-            ForEach-Object { [version]$_.Version } |
-            Sort-Object -Descending | Select-Object -First 1
+        # In service sessions, WinGet can report success while the old package remains registered.
+        $localVersion = Get-JindaWinGetIndexVersion
+        if ((-not $localVersion -or $localVersion -lt $offeredVersion) -and (Get-Process -Id $PID).SessionId -eq 0) {
+            Write-Host 'WinGet left the index out of date. Registering the Microsoft source package for this account...'
+            $sourcePackage = Join-Path $env:TEMP ('jinda-winget-source-' + [guid]::NewGuid().ToString('N') + '.msix')
+            try {
+                Invoke-WebRequest -Uri $sourceUri -UseBasicParsing -OutFile $sourcePackage -TimeoutSec 60 -ErrorAction Stop
+                Add-AppxPackage -Path $sourcePackage -ErrorAction Stop | Out-Null
+            }
+            finally {
+                Remove-Item -LiteralPath $sourcePackage -Force -ErrorAction SilentlyContinue
+            }
+            $localVersion = Get-JindaWinGetIndexVersion
+        }
         if (-not $localVersion) {
             throw 'The WinGet package index is not registered for this Windows account.'
         }
@@ -631,7 +647,7 @@ function Update-JindaWinGetSource {
     }
     catch {
         Write-Host ''
-        throw "Setup stopped before app installation because the WinGet package index could not be refreshed or verified. $($_.Exception.Message) Check the connection to cdn.winget.microsoft.com and retry from the signed-in Windows desktop."
+        throw "Setup stopped before app installation because the WinGet package index could not be refreshed or verified. $($_.Exception.Message)"
     }
 }
 
@@ -711,6 +727,7 @@ function Install-JindaSoftware {
         }
     }
 
+    $appsSkippedForSignIn = @()
     foreach ($package in $packages) {
         if ($package.Source -eq 'windows-capability') {
             if (Install-JindaOpenSSH -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
@@ -721,6 +738,11 @@ function Install-JindaSoftware {
             continue
         }
         Write-Host ''
+        if ($package['RequiresInteractiveSession'] -and (Get-Process -Id $PID).SessionId -eq 0) {
+            $appsSkippedForSignIn += $package.Name
+            Write-Warning "$($package.Name): installation requires an interactive Windows session. Skipping this app."
+            continue
+        }
         if (-not $PSCmdlet.ShouldProcess($package.Name, 'Install using WinGet')) {
             continue
         }
@@ -735,6 +757,11 @@ function Install-JindaSoftware {
             & $winget.Source @wingetArguments | Out-Host
             $wingetExitCode = $LASTEXITCODE
             $exitCodeHex = '{0:X8}' -f ($wingetExitCode -band 0xFFFFFFFFL)
+            if ($package.Source -eq 'msstore' -and $exitCodeHex -in @('80070520', '8A150075', '8A150076', '8A150077')) {
+                $appsSkippedForSignIn += $package.Name
+                Write-Warning "$($package.Name): Microsoft Store sign-in is unavailable (0x$exitCodeHex). Skipping this app."
+                continue
+            }
             switch ($exitCodeHex) {
                 '00000000' { Write-Host "$($package.Name) is available." }
                 '8A15002B' { Write-Host "$($package.Name): no newer version is available from WinGet." }
@@ -750,6 +777,10 @@ function Install-JindaSoftware {
             if ($package.Id -ne 'Google.Chrome') { throw }
             Write-Warning "Google Chrome did not complete successfully: $($_.Exception.Message) Installation will continue with the remaining apps."
         }
+    }
+    if ($appsSkippedForSignIn.Count) {
+        Write-Host ''
+        Write-Warning "Apps skipped because a sign-in session was unavailable: $($appsSkippedForSignIn -join ', ')."
     }
     if ($restartNeeded) {
         Write-Warning 'Software is installed. Restart Windows to complete the installation.'
