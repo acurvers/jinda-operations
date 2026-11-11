@@ -12,7 +12,11 @@ USInternational (default) or US.
 Repairs WinGet using Microsoft.WinGet.Client and checks its source before installing
 software. Only runs when this switch is specified and app installation is enabled.
 .PARAMETER InstallApps
-Ask (default), Yes or No. Asks at startup whether to download and install apps.
+Legacy choice for both app groups. Yes or No fills in any group whose choice is still Ask.
+.PARAMETER InstallEssentialApps
+Ask (default), Yes or No. The question defaults to Yes.
+.PARAMETER InstallOptionalApps
+Ask (default), Yes or No. The question defaults to No.
 .PARAMETER RemoteDesktop
 Ask (default), Yes or No. Enables Remote Desktop for the selected LAN and WireGuard client.
 .PARAMETER PowerShellRemoting
@@ -39,6 +43,8 @@ param(
     [string]$LanIPAddress,
     [string]$SshPublicKey,
     [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -270,10 +276,14 @@ function Get-JindaSetupOptions {
     param(
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
         [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask',
-        [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask'
+        [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask',
+        [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
-    $apps = Read-JindaYesNo -Prompt 'Download and install apps?' -Choice $InstallApps -Default $true
+    if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
+    if ($InstallOptionalApps -eq 'Ask') { $InstallOptionalApps = $InstallApps }
+    $essential = Read-JindaYesNo -Prompt 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)?' -Choice $InstallEssentialApps -Default $true
+    $optional = Read-JindaYesNo -Prompt 'Install optional apps?' -Choice $InstallOptionalApps
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
@@ -281,7 +291,8 @@ function Get-JindaSetupOptions {
     $address = ''
     if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
-        InstallApps = $apps; RemoteDesktop = $rdp; PowerShellRemoting = $winrm
+        InstallEssentialApps = $essential; InstallOptionalApps = $optional
+        RemoteDesktop = $rdp; PowerShellRemoting = $winrm
         OpenSSH = $ssh; RemoveBundledApps = $removeApps; LanIPAddress = $address
     }
 }
@@ -298,14 +309,27 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$OpenSSH = 'Ask',
         [string]$LanIPAddress,
         [string]$SshPublicKey,
-        [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask'
+        [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask'
     )
 
     $ErrorActionPreference = 'Stop'
     if (-not $PSCmdlet.ShouldProcess('This PC', 'Install Jinda software and configure Windows')) { return 0 }
 
     # The start command downloads one complete source archive. Children never prompt.
-    $options = Get-JindaSetupOptions -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -RemoveBundledApps $RemoveBundledApps -LanIPAddress $LanIPAddress
+    $choices = @{
+        InstallApps = $InstallApps
+        InstallEssentialApps = $InstallEssentialApps
+        InstallOptionalApps = $InstallOptionalApps
+        RemoteDesktop = $RemoteDesktop
+        PowerShellRemoting = $PowerShellRemoting
+        OpenSSH = $OpenSSH
+        RemoveBundledApps = $RemoveBundledApps
+        LanIPAddress = $LanIPAddress
+    }
+    $options = Get-JindaSetupOptions @choices
+    $installAppsSelected = $options.InstallEssentialApps -or $options.InstallOptionalApps
     if ($SshPublicKey -and -not $options.OpenSSH) {
         throw 'Select OpenSSH when providing -SshPublicKey.'
     }
@@ -313,7 +337,7 @@ function Invoke-JindaInitialization {
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
     $requiredScripts = @($config)
-    if ($options.InstallApps -or $options.OpenSSH) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
+    if ($installAppsSelected -or $options.OpenSSH) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
     foreach ($path in $requiredScripts) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Incomplete script package: $path is missing. Use the new startup command from the GitHub README."
@@ -322,8 +346,8 @@ function Invoke-JindaInitialization {
     Write-Host "Using scripts from GitHub package: $folder"
 
     $installCode = 0
-    if ($options.InstallApps -or $options.OpenSSH) {
-        if ($RepairWinGet -and $options.InstallApps) { Repair-JindaWinGet }
+    if ($installAppsSelected -or $options.OpenSSH) {
+        if ($RepairWinGet -and $installAppsSelected) { Repair-JindaWinGet }
         $installArguments = @()
         if ($options.OpenSSH) {
             if (-not $SshPublicKey) {
@@ -331,7 +355,9 @@ function Invoke-JindaInitialization {
             }
             $installArguments += @('-EnableOpenSSH', '-LanIPAddress', $options.LanIPAddress, '-SshPublicKey', $SshPublicKey)
         }
-        if (-not $options.InstallApps) { $installArguments += '-SkipApps' }
+        if (-not $installAppsSelected) { $installArguments += '-SkipApps' }
+        elseif (-not $options.InstallOptionalApps) { $installArguments += @('-AppGroup', 'Essential') }
+        elseif (-not $options.InstallEssentialApps) { $installArguments += @('-AppGroup', 'Optional') }
         Write-Host 'Step 1/2: installing the selected software components.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive
         if ($installCode -notin @(0, 3010)) { throw "Software installation failed (exit code $installCode). Configuration has not started." }
@@ -362,12 +388,27 @@ function Invoke-JindaInitialization {
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
+        if ($InstallEssentialApps -ne 'Ask') { $scriptArguments += @('-InstallEssentialApps', $InstallEssentialApps) }
+        if ($InstallOptionalApps -ne 'Ask') { $scriptArguments += @('-InstallOptionalApps', $InstallOptionalApps) }
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaInitialization -Keyboard $Keyboard -RepairWinGet:$RepairWinGet -InstallApps $InstallApps -RemoteDesktop $RemoteDesktop -PowerShellRemoting $PowerShellRemoting -OpenSSH $OpenSSH -RemoveBundledApps $RemoveBundledApps -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey
+            $setup = @{
+                Keyboard = $Keyboard
+                RepairWinGet = $RepairWinGet
+                InstallApps = $InstallApps
+                InstallEssentialApps = $InstallEssentialApps
+                InstallOptionalApps = $InstallOptionalApps
+                RemoteDesktop = $RemoteDesktop
+                PowerShellRemoting = $PowerShellRemoting
+                OpenSSH = $OpenSSH
+                RemoveBundledApps = $RemoveBundledApps
+                LanIPAddress = $LanIPAddress
+                SshPublicKey = $SshPublicKey
+            }
+            Invoke-JindaInitialization @setup
         }
         exit $exitCode
     }

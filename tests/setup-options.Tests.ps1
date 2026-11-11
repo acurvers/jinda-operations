@@ -8,27 +8,30 @@ Describe 'Choices are collected once before unattended setup' {
         Mock Select-JindaLanAddress { '10.20.30.40' }
     }
 
-    It 'asks about installing apps first and defaults the remaining choices to no' {
-        foreach ($answer in @('', '', '', '', '')) { $script:answers.Enqueue($answer) }
+    It 'defaults to essential apps only and prompts for both groups before other options' {
+        foreach ($answer in @('', '', '', '', '', '')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
-        $options.InstallApps | Should Be $true
+        $options.InstallEssentialApps | Should Be $true
+        $options.InstallOptionalApps | Should Be $false
         $options.RemoteDesktop | Should Be $false
         $options.PowerShellRemoting | Should Be $false
         $options.OpenSSH | Should Be $false
         $options.RemoveBundledApps | Should Be $false
-        $script:prompts.Count | Should Be 5
-        $script:prompts[0] | Should Be 'Download and install apps? [Y/n]'
-        $script:prompts[1] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
-        $script:prompts[2] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
-        $script:prompts[3] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
-        $script:prompts[4] | Should Be 'Uninstall LinkedIn and Microsoft Solitaire Collection? [y/N]'
+        $script:prompts.Count | Should Be 6
+        $script:prompts[0] | Should Be 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? [Y/n]'
+        $script:prompts[1] | Should Be 'Install optional apps? [y/N]'
+        $script:prompts[2] | Should Be 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
+        $script:prompts[3] | Should Be 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged) [y/N]'
+        $script:prompts[4] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
+        $script:prompts[5] | Should Be 'Uninstall LinkedIn and Microsoft Solitaire Collection? [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 
     It 'accepts independent yes/no choices and selects the LAN before returning' {
-        foreach ($answer in @('n', 'y', 'n', 'y', 'y')) { $script:answers.Enqueue($answer) }
+        foreach ($answer in @('n', 'y', 'y', 'n', 'y', 'y')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
-        $options.InstallApps | Should Be $false
+        $options.InstallEssentialApps | Should Be $false
+        $options.InstallOptionalApps | Should Be $true
         $options.RemoteDesktop | Should Be $true
         $options.PowerShellRemoting | Should Be $false
         $options.LanIPAddress | Should Be '10.20.30.40'
@@ -50,14 +53,25 @@ Describe 'Choices are collected once before unattended setup' {
     }
 
     It 'uses explicit parameter choices without prompts' {
-        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -RemoveBundledApps Yes -LanIPAddress '10.20.30.40'
-        $options.InstallApps | Should Be $false
+        $options = Get-JindaSetupOptions -InstallEssentialApps No -InstallOptionalApps Yes -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -RemoveBundledApps Yes -LanIPAddress '10.20.30.40'
+        $options.InstallEssentialApps | Should Be $false
+        $options.InstallOptionalApps | Should Be $true
         $options.RemoteDesktop | Should Be $false
         $options.PowerShellRemoting | Should Be $true
         $options.OpenSSH | Should Be $true
         $options.RemoveBundledApps | Should Be $true
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It -ParameterFilter { $Address -eq '10.20.30.40' }
+    }
+
+    It 'uses the legacy app choice for both groups unless a group is explicitly set' {
+        $options = Get-JindaSetupOptions -InstallApps Yes -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No
+        $options.InstallEssentialApps | Should Be $true
+        $options.InstallOptionalApps | Should Be $true
+        $options = Get-JindaSetupOptions -InstallApps No -InstallEssentialApps Yes -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No
+        $options.InstallEssentialApps | Should Be $true
+        $options.InstallOptionalApps | Should Be $false
+        Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
     }
 }
 

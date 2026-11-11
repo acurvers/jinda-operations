@@ -28,8 +28,8 @@
 <body>
   <main>
     <h1>Jinda Operations</h1>
-    <p>Windows 11 Pro inrichten: optioneel <strong>21 apps en OpenSSH</strong> installeren, Windows naar <strong>Engels (VS) met US-International</strong> en optioneel toegang op afstand via het LAN.</p>
-    <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Kies aan het begin met <strong>y/n</strong> of je apps, Remote Desktop, WinRM en OpenSSH wilt instellen en of je <strong>LinkedIn en Microsoft Solitaire Collection</strong> wilt verwijderen. OpenSSH en apps verwijderen hebben elk een eigen keuze, standaard <strong>No</strong>, ook als je apps installeren overslaat. Kies zo nodig het LAN. Daarna loopt alles zonder verdere vragen door.</p>
+    <p>Richt Windows 11 Pro in met <strong>Engels (VS) en US-International</strong>. Kies welke apps je wilt installeren en welke toegang op afstand je wilt inschakelen.</p>
+    <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Setup vraagt eerst naar <strong>essentiële apps [Y/n]</strong> en daarna naar <strong>optionele apps [y/N]</strong>. Vervolgens kies je voor Remote Desktop, WinRM, OpenSSH en het verwijderen van LinkedIn en Microsoft Solitaire Collection. Enter kiest bij die vier vragen <strong>No</strong>. Kies zo nodig het LAN.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
@@ -55,23 +55,26 @@
     <p>De configuratie stelt de maximale wachtwoordleeftijd voor lokale Windows-accounts in op <strong>onbeperkt</strong>, ook als je apps installeren overslaat.</p>
     <h2>Apps</h2>
     <p>Apps overslaan? Verwijder het eerste <code>#</code> bij de app in <a href="https://github.com/acurvers/jinda-operations/blob/main/skip-apps.conf">skip-apps.conf</a> en sla de wijziging op in GitHub. Dezelfde startopdracht gebruikt die keuze bij de volgende run; bestaande apps blijven staan.</p>
+    <h3>Essentiële apps</h3>
     <ul class="app-list">
+      <li><img src="assets/icons/vscode.png" alt="" width="28" height="28"><span>Visual Studio Code <small>(met PowerShell-extensie)</small></span></li>
+      <li><img src="assets/icons/everything.ico" alt="" width="28" height="28"><span>Everything <small>(bestanden zoeken)</small></span></li>
+      <li><img src="assets/icons/notepadplusplus.ico" alt="" width="28" height="28"><span>Notepad++</span></li>
       <li><img src="assets/icons/chrome.png" alt="" width="28" height="28"><span>Google Chrome</span></li>
+      <li><img src="assets/icons/lastpass.ico" alt="" width="28" height="28"><span>LastPass</span></li>
+    </ul>
+    <h3>Optionele apps</h3>
+    <ul class="app-list">
       <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer</span></li>
       <li><img src="assets/icons/powershell.png" alt="" width="28" height="28"><span>PowerShell 7 <small>(nieuwste stabiele versie)</small></span></li>
-      <li><span>OpenSSH <small>(eigen y/n-keuze, standaard No; bij Yes: SSH op het gekozen LAN en de publieke salonsleutel voor ingeschakelde lokale Windows-gebruikers)</small></span></li>
-      <li><img src="assets/icons/vscode.png" alt="" width="28" height="28"><span>Visual Studio Code <small>(met PowerShell-extensie)</small></span></li>
       <li><img src="assets/icons/onenote.png" alt="" width="28" height="28"><span>OneNote</span></li>
-      <li><img src="assets/icons/notepadplusplus.ico" alt="" width="28" height="28"><span>Notepad++</span></li>
       <li><img src="assets/icons/discord.png" alt="" width="28" height="28"><span>Discord <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/reolink.png" alt="" width="28" height="28"><span>Reolink Client</span></li>
       <li><img src="assets/icons/paintnet.png" alt="" width="28" height="28"><span>Paint.NET</span></li>
-      <li><img src="assets/icons/lastpass.ico" alt="" width="28" height="28"><span>LastPass</span></li>
       <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>
       <li><img src="assets/icons/zoom.ico" alt="" width="28" height="28"><span>Zoom</span></li>
       <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/vlc.png" alt="" width="28" height="28"><span>VLC</span></li>
-      <li><img src="assets/icons/everything.ico" alt="" width="28" height="28"><span>Everything <small>(bestanden zoeken)</small></span></li>
       <li><img src="assets/icons/beyondcompare.png" alt="" width="28" height="28"><span>Beyond Compare 5 <small>(proefversie; licentie apart)</small></span></li>
       <li><img src="assets/icons/chatgpt-classic.png" alt="" width="28" height="28"><span>ChatGPT Classic</span></li>
       <li><img src="assets/icons/codex.png" alt="" width="28" height="28"><span>Codex desktop <small>(nu ChatGPT)</small></span></li>
@@ -81,6 +84,7 @@
       <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
       <li><img src="assets/icons/whatsapp.webp" alt="" width="28" height="28"><span>WhatsApp</span></li>
     </ul>
+    <p>OpenSSH heeft een eigen keuze. Met Yes stelt het script SSH in op het gekozen LAN en voegt het de publieke salonsleutel toe voor ingeschakelde lokale Windows-gebruikers.</p>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
   <script>

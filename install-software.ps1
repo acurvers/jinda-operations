@@ -20,6 +20,8 @@ one active IPv4 LAN address must be available.
 Optional Ed25519 public key for the enabled local Windows accounts when OpenSSH is selected.
 .PARAMETER SkipApps
 Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-only installation.
+.PARAMETER AppGroup
+Select Essential, Optional or All (default) when running this script directly.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -27,6 +29,7 @@ param(
     [switch]$SkipApps,
     [string]$LanIPAddress,
     [string]$SshPublicKey,
+    [ValidateSet('All', 'Essential', 'Optional')][string]$AppGroup = 'All',
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -526,26 +529,27 @@ function Install-JindaOpenSSH {
 
 function Get-JindaSoftwarePackages {
     # Scope is only forced when the manifest supports it; empty means installer default.
+    # Ordinary apps without the Essential flag belong to the optional group.
     return @(
-        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
         @{ Id = 'Windows.OpenSSH'; Name = 'OpenSSH client and server'; Source = 'windows-capability' }
-        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         # Current desktop OneNote, not the retired OneNote for Windows 10.
         @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
-        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         # Temporarily disabled: Discord installation is not working reliably (user report).
         # @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @() }
         @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
         @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @() }
+        @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @(); Essential = $true }
         @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         # Temporarily disabled: Microsoft Teams installation is not working reliably (user report).
         # @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }
         @{ Id = 'VideoLAN.VLC'; Name = 'VLC'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        @{ Id = 'voidtools.Everything'; Name = 'Everything'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'voidtools.Everything'; Name = 'Everything'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         @{ Id = 'ScooterSoftware.BeyondCompare.5'; Name = 'Beyond Compare 5'; Source = 'winget'; Scope = 'machine'; Extra = @('--locale', 'en') }
         @{ Id = '9NT1R1C2HH7J'; Name = 'ChatGPT Classic'; Source = 'msstore'; Scope = ''; Extra = @() }
         # The Codex desktop app is now named ChatGPT; OpenAI.Codex is the separate CLI.
@@ -591,7 +595,10 @@ function Get-JindaSkippedApps {
 
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
-    param([switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress, [string]$SshPublicKey)
+    param(
+        [switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress, [string]$SshPublicKey,
+        [ValidateSet('All', 'Essential', 'Optional')][string]$AppGroup = 'All'
+    )
 
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
@@ -605,11 +612,15 @@ function Install-JindaSoftware {
         $SshPublicKey = ConvertTo-JindaEd25519PublicKey -PublicKey $SshPublicKey
     }
     $packages = @(foreach ($package in (Get-JindaSoftwarePackages)) {
-        if ($package.Id -eq 'Windows.OpenSSH' -and -not $EnableOpenSSH) {
-            Write-Host 'OpenSSH was not selected; existing installation and settings are unchanged.'
+        if ($package.Id -eq 'Windows.OpenSSH') {
+            if (-not $EnableOpenSSH) {
+                Write-Host 'OpenSSH was not selected; existing installation and settings are unchanged.'
+                continue
+            }
+        } elseif ($SkipApps -or ($AppGroup -eq 'Essential' -and -not $package['Essential']) -or
+            ($AppGroup -eq 'Optional' -and $package['Essential'])) {
             continue
         }
-        if ($SkipApps -and $package.Id -ne 'Windows.OpenSSH') { continue }
         if ($package.Id -in $skippedApps) {
             Write-Host ''
             Write-Host "$($package.Name): skipped by skip-apps.conf; existing installation left unchanged."
@@ -705,10 +716,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         $scriptArguments = @()
         if ($EnableOpenSSH) { $scriptArguments += '-EnableOpenSSH' }
         if ($SkipApps) { $scriptArguments += '-SkipApps' }
+        if ($AppGroup -ne 'All') { $scriptArguments += @('-AppGroup', $AppGroup) }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey) { return 3010 }
+            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -AppGroup $AppGroup -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey) { return 3010 }
             return 0
         }
         exit $exitCode

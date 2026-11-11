@@ -222,6 +222,26 @@ Describe 'All requested Jinda applications' {
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
     }
 
+    It 'installs the five essential apps with the existing VS Code extension step' {
+        Install-JindaSoftware -AppGroup Essential | Should Be $false
+        ($script:appOrder -join ',') | Should Be 'Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,LastPass.LastPass,voidtools.Everything'
+        Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+    }
+
+    It 'keeps the local skip list effective when only essential apps are selected' {
+        Mock Get-JindaSkippedApps { @('LastPass.LastPass') }
+        Install-JindaSoftware -AppGroup Essential | Should Be $false
+        ($script:appOrder -join ',') | Should Be 'Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,voidtools.Everything'
+    }
+
+    It 'installs the optional apps and handles the independent SSH choice' {
+        Install-JindaSoftware -AppGroup Optional -EnableOpenSSH | Should Be $false
+        ($script:appOrder -join ',') | Should Be 'TeamViewer.TeamViewer,Microsoft.PowerShell,XPFFZHVGQWWLHB,Reolink.Reolink,dotPDN.PaintDotNet,Git.Git,Zoom.Zoom,VideoLAN.VLC,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'
+        Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
+    }
+
     It 'does not require or update WinGet when every app is skipped' {
         Mock Get-JindaSkippedApps { Get-JindaSoftwarePackages | ForEach-Object { $_.Id } }
         Install-JindaSoftware | Should Be $false
@@ -403,6 +423,15 @@ Describe 'Installer entry point preserves the OpenSSH choice' {
         $SkipApps = $false
         & $script:installerEntry
         Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter { $ScriptArguments.Count -eq 0 }
-        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { -not $EnableOpenSSH -and -not $SkipApps }
+        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { -not $EnableOpenSSH -and -not $SkipApps -and $AppGroup -eq 'All' }
+    }
+
+    It 'keeps the app group through runtime relaunch and installation' {
+        $AppGroup = 'Essential'
+        & $script:installerEntry
+        Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($ScriptArguments -join ' ') -eq '-AppGroup Essential'
+        }
+        Assert-MockCalled Install-JindaSoftware -Times 1 -Exactly -Scope It -ParameterFilter { $AppGroup -eq 'Essential' }
     }
 }

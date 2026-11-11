@@ -36,7 +36,8 @@ hun eigen taalinstelling.
 
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
-| Download and install apps? | Ja | Geen gewone apps downloaden/installeren en geen WinGet-herstel; OpenSSH heeft een eigen keuze |
+| Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de vijf essentiële apps over |
+| Install optional apps? | Nee | Slaat de overige apps over |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
@@ -47,18 +48,20 @@ dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
 Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vragen.
 De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
 
-Voor vooraf ingevulde keuzes kun je `-InstallApps Yes|No`, `-RemoteDesktop Yes|No`,
-`-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No`, `-RemoveBundledApps Yes|No` en zo nodig `-LanIPAddress <actief-IPv4-adres>` aan
-init meegeven. Zonder deze parameters gebruikt init `Ask`. Gebruik bij meerdere
+Voor vooraf ingevulde keuzes kun je `-InstallEssentialApps Yes|No`, `-InstallOptionalApps Yes|No`,
+`-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No` en
+`-RemoveBundledApps Yes|No` aan init meegeven. Het bestaande `-InstallApps Yes|No`
+vult de keuze voor beide groepen in. Een expliciete keuze per groep heeft voorrang.
+Gebruik bij meerdere
 netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
 
 OpenSSH heeft een eigen keuze, onafhankelijk van apps installeren, RDP en WinRM.
-Met apps **N** en OpenSSH **Y** worden alleen de SSH-onderdelen geinstalleerd;
-WinGet en de andere apps worden overgeslagen. Daarna volgt de normale Windows-configuratie.
+Kies bij beide appgroepen **N** en bij OpenSSH **Y** om alleen de SSH-onderdelen
+te installeren. Daarna volgt de normale Windows-configuratie.
 RDP, WinRM en SSH gebruiken dezelfde LAN-keuze.
 
 Met **Y** bij verwijderen ruimt de configuratie de Windows-apps LinkedIn en Microsoft Solitaire Collection op
-voor bestaande gebruikers en haalt ze uit de standaardinstallatie voor nieuwe gebruikers. Dit werkt ook met apps installeren op **N**.
+voor bestaande gebruikers en haalt ze uit de standaardinstallatie voor nieuwe gebruikers. Dit werkt ook als je beide appgroepen overslaat.
 
 ## Optioneel WinGet-herstel
 
@@ -210,6 +213,9 @@ Dit gebeurt zonder extra vragen en alleen als een nieuwere versie beschikbaar is
 er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het script
 voordat de apps beginnen. Kies je aan het begin geen app-installatie, dan wordt
 ook deze WinGet-update overgeslagen.
+
+VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel. De overige
+apps vallen onder de optionele keuze. `skip-apps.conf` geldt voor beide groepen.
 
 | App | Pakket / bron | Installatiebereik |
 | --- | --- | --- |
