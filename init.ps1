@@ -209,16 +209,7 @@ function Repair-JindaWinGet {
     Import-Module -Name Microsoft.WinGet.Client -Force -ErrorAction Stop
     Repair-WinGetPackageManager -Force -Latest -Verbose -ErrorAction Stop | Out-Host
 
-    # Probe a required app: Chrome installation errors are allowed to continue.
-    Write-Host 'Checking the WinGet source using TeamViewer...'
-    $winget = (Get-Command winget.exe -CommandType Application -ErrorAction Stop).Source
-    $PSNativeCommandUseErrorActionPreference = $false
-    & $winget show --id TeamViewer.TeamViewer --exact --source winget --accept-source-agreements --disable-interactivity | Out-Host
-    $sourceCode = $LASTEXITCODE
-    if ($sourceCode -ne 0) {
-        throw "The WinGet source is still unavailable after repair (exit code $sourceCode). Installation and configuration have not started."
-    }
-    Write-Host 'WinGet repair and source check completed successfully.'
+    Write-Host 'WinGet repair completed. Setup will verify the package index before installing apps.'
 }
 
 function Read-JindaYesNo {
@@ -287,7 +278,7 @@ function Get-JindaSetupOptions {
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
-    $removeApps = Read-JindaYesNo -Prompt 'Uninstall LinkedIn and Microsoft Solitaire Collection?' -Choice $RemoveBundledApps
+    $removeApps = Read-JindaYesNo -Prompt 'Uninstall unwanted apps?' -Choice $RemoveBundledApps
     $address = ''
     if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{

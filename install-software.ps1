@@ -3,6 +3,7 @@
 .SYNOPSIS
 Install Jinda apps, Windows OpenSSH and the official Yodeck Windows installer.
 .DESCRIPTION
+Refreshes the WinGet source and verifies its registered index before app installation.
 Updates WinGet (Microsoft App Installer) before installing any selected WinGet apps.
 Installs for all users where supported. Existing WinGet apps are updated when
 a newer version is available from the selected source.
@@ -593,6 +594,47 @@ function Get-JindaSkippedApps {
     return $skipped
 }
 
+function Update-JindaWinGetSource {
+    param([string]$WingetPath)
+
+    Write-Host ''
+    Write-Host 'Refreshing the WinGet package index...'
+    try {
+        # Capture the offered version before updating in case Microsoft publishes another index during the run.
+        $sourceUri = 'https://cdn.winget.microsoft.com/cache/source2.msix'
+        $response = Invoke-WebRequest -Uri $sourceUri -Method Head -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+        $versionHeader = $response.Headers['x-ms-meta-sourceversion'] | Select-Object -First 1
+        $offeredVersion = $null
+        if (-not [version]::TryParse($versionHeader, [ref]$offeredVersion) -or $offeredVersion.Revision -lt 0) {
+            throw 'Microsoft did not return a valid WinGet index version.'
+        }
+
+        & $WingetPath source update --name winget --disable-interactivity | Out-Host
+        $updateExitCode = $LASTEXITCODE
+        if ($updateExitCode -ne 0) {
+            $exitCodeHex = '{0:X8}' -f ($updateExitCode -band 0xFFFFFFFFL)
+            throw "WinGet source update failed (exit code $updateExitCode / 0x$exitCodeHex)."
+        }
+
+        # WinGet can report a successful refresh while the old source package remains registered.
+        $localVersion = Get-AppxPackage -Name 'Microsoft.Winget.Source' -ErrorAction Stop |
+            Where-Object PackageFamilyName -eq 'Microsoft.Winget.Source_8wekyb3d8bbwe' |
+            ForEach-Object { [version]$_.Version } |
+            Sort-Object -Descending | Select-Object -First 1
+        if (-not $localVersion) {
+            throw 'The WinGet package index is not registered for this Windows account.'
+        }
+        if ($localVersion -lt $offeredVersion) {
+            throw "The local WinGet index ($localVersion) is older than the version offered by Microsoft ($offeredVersion)."
+        }
+        Write-Host "WinGet package index verified (local $localVersion, offered $offeredVersion)."
+    }
+    catch {
+        Write-Host ''
+        throw "Setup stopped before app installation because the WinGet package index could not be refreshed or verified. $($_.Exception.Message) Check the connection to cdn.winget.microsoft.com and retry from the signed-in Windows desktop."
+    }
+}
+
 function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
@@ -638,6 +680,12 @@ function Install-JindaSoftware {
         $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
         if (-not $winget) {
             throw 'WinGet is missing. Install or update App Installer using the Microsoft Store, then reopen PowerShell.'
+        }
+        if ($PSCmdlet.ShouldProcess('WinGet package index', 'Refresh and verify the index')) {
+            Update-JindaWinGetSource -WingetPath $winget.Source
+        } elseif (-not $WhatIfPreference) {
+            Write-Host ''
+            throw 'Setup stopped before app installation because WinGet index verification was declined.'
         }
     }
 

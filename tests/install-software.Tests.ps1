@@ -2,6 +2,12 @@
 
 function Invoke-JindaFakeWinget {
     $script:wingetSequence.Add($args[0])
+    if ($args[0] -eq 'source') {
+        $script:wingetSourceCalls.Add(@($args))
+        $global:LASTEXITCODE = $script:wingetSourceExitCode
+        Write-Output 'Simulated WinGet source update output'
+        return
+    }
     if ($args[0] -eq 'upgrade') {
         $script:wingetUpgradeCalls.Add(@($args))
         $global:LASTEXITCODE = $script:wingetUpgradeExitCode
@@ -23,10 +29,13 @@ function Invoke-JindaUpdatedFakeWinget {
 Describe 'All requested Jinda applications' {
     BeforeEach {
         $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
+        $script:wingetSourceCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetUpgradeCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:wingetSequence = New-Object 'System.Collections.Generic.List[string]'
         $script:appOrder = New-Object 'System.Collections.Generic.List[string]'
         $script:wingetUpgradeExitCode = 0
+        $script:wingetSourceExitCode = 0
+        $script:localIndexVersion = '2026.1111.1420.27'
         $script:wingetExitCodes = @(0) * 20
         $script:throwChrome = $false
         Mock Get-JindaSkippedApps { @() }
@@ -34,12 +43,22 @@ Describe 'All requested Jinda applications' {
         Mock Install-JindaOpenSSH { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
+        Mock Invoke-WebRequest { throw 'Unexpected web request' }
+        Mock Invoke-WebRequest { [pscustomobject]@{ Headers = @{ 'x-ms-meta-sourceversion' = @('2026.1111.1420.27') } } } -ParameterFilter {
+            $Uri -eq 'https://cdn.winget.microsoft.com/cache/source2.msix' -and $Method -eq 'Head'
+        }
+        Mock Get-AppxPackage {
+            [pscustomobject]@{ PackageFamilyName = 'Microsoft.Winget.Source_8wekyb3d8bbwe'; Version = [version]$script:localIndexVersion }
+        } -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
     }
 
-    It 'updates only WinGet before the apps without prompts, forced upgrades or reboots' {
+    It 'refreshes the source, accepts an already-current index and upgrades WinGet before the apps' {
         Install-JindaSoftware | Should Be $false
-        $script:wingetSequence[0] | Should Be 'upgrade'
-        $script:wingetSequence[1] | Should Be 'install'
+        $script:wingetSequence[0] | Should Be 'source'
+        $script:wingetSequence[1] | Should Be 'upgrade'
+        $script:wingetSequence[2] | Should Be 'install'
+        $script:wingetSourceCalls.Count | Should Be 1
+        ($script:wingetSourceCalls[0] -join ' ') | Should Be 'source update --name winget --disable-interactivity'
         $script:wingetUpgradeCalls.Count | Should Be 1
         $call = $script:wingetUpgradeCalls[0]
         $call[[array]::IndexOf($call, '--id') + 1] | Should Be 'Microsoft.AppInstaller'
@@ -51,6 +70,55 @@ Describe 'All requested Jinda applications' {
             ($call -contains $flag) | Should Be $false
         }
         $script:wingetCalls.Count | Should Be 20
+    }
+
+    It 'reads the registered version after updating and accepts an index ahead of the original CDN response' {
+        $script:indexReadAfterUpdate = $false
+        Mock Get-AppxPackage {
+            $script:indexReadAfterUpdate = $script:wingetSequence[-1] -eq 'source'
+            [pscustomobject]@{ PackageFamilyName = 'Microsoft.Winget.Source_8wekyb3d8bbwe'; Version = [version]'2026.1111.1532.1' }
+        } -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Install-JindaSoftware | Should Be $false
+        $script:indexReadAfterUpdate | Should Be $true
+        $script:wingetCalls.Count | Should Be 20
+    }
+
+    It 'aborts with a blank line before the error when the source update returns a failure' {
+        $script:wingetSourceExitCode = -1978335217
+        $script:sourceMessages = New-Object 'System.Collections.Generic.List[string]'
+        Mock Write-Host { $script:sourceMessages.Add([string]$Object) }
+        { Install-JindaSoftware } | Should Throw 'WinGet source update failed (exit code -1978335217 / 0x8A15000F)'
+        $script:sourceMessages[-1] | Should Be ''
+        $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetCalls.Count | Should Be 0
+    }
+
+    It 'aborts when the registered index stays old despite a successful WinGet exit code' {
+        $script:localIndexVersion = '2026.1108.1134.26'
+        { Install-JindaSoftware -EnableOpenSSH } | Should Throw 'The local WinGet index (2026.1108.1134.26) is older than the version offered by Microsoft (2026.1111.1420.27)'
+        $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetCalls.Count | Should Be 0
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+    }
+
+    It 'aborts when the offered index version cannot be obtained' {
+        Mock Invoke-WebRequest { throw 'Simulated CDN timeout' } -ParameterFilter { $Method -eq 'Head' }
+        { Install-JindaSoftware } | Should Throw 'Simulated CDN timeout'
+        $script:wingetSequence.Count | Should Be 0
+    }
+
+    It 'aborts when Microsoft responds without a valid source version' {
+        Mock Invoke-WebRequest { [pscustomobject]@{ Headers = @{} } } -ParameterFilter { $Method -eq 'Head' }
+        { Install-JindaSoftware } | Should Throw 'Microsoft did not return a valid WinGet index version'
+        $script:wingetSequence.Count | Should Be 0
+    }
+
+    It 'aborts when the WinGet index is not registered after updating' {
+        Mock Get-AppxPackage {} -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        { Install-JindaSoftware } | Should Throw 'The WinGet package index is not registered'
+        $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetCalls.Count | Should Be 0
     }
 
     It 'continues when WinGet itself has no newer version' {
@@ -201,6 +269,8 @@ Describe 'All requested Jinda applications' {
         (Install-JindaSoftware -WhatIf) | Should Be $false
         $script:wingetCalls.Count | Should Be 0
         $script:wingetUpgradeCalls.Count | Should Be 0
+        $script:wingetSourceCalls.Count | Should Be 0
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
     }
 
     It 'reports missing WinGet before attempting any package' {
@@ -353,6 +423,7 @@ Describe 'All requested Jinda applications' {
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
         $script:wingetCalls.Count | Should Be 0
         $script:wingetUpgradeCalls.Count | Should Be 0
+        Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
     }
 
     It 'respects the skip file even when SSH is the only selected component' {

@@ -41,7 +41,7 @@ hun eigen taalinstelling.
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
-| Uninstall LinkedIn and Microsoft Solitaire Collection? | Nee | Beide apps blijven staan |
+| Uninstall unwanted apps? | Nee | LinkedIn en Microsoft Solitaire Collection blijven staan |
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -75,9 +75,8 @@ Bij WinGet-bronfouten zoals `0x8A15000F` gebruik je dezelfde oneliner met
 Deze optionele switch installeert/bijwerkt `Microsoft.WinGet.Client` uit PSGallery
 voor het uitvoerende account en voert `Repair-WinGetPackageManager -Force -Latest`
 uit. In Windows PowerShell 5.1 wordt zo nodig eerst de NuGet-provider toegevoegd.
-Als apps installeren is gekozen, herstelt init na de beginvragen WinGet en controleert met
-`winget show` of TeamViewer via de winget-bron gevonden wordt. Pas daarna beginnen
-installatie en configuratie; bij een herstel- of bronfout stopt init.
+Als apps installeren is gekozen, herstelt init na de beginvragen WinGet. Daarna
+ververst en controleert het installatiescript de pakketindex voordat het apps installeert.
 Zonder de switch wordt geen herstel uitgevoerd. Ook met de switch doet `-WhatIf`
 geen wijzigingen. Zie de [Microsoft-herstelinstructies](https://learn.microsoft.com/en-us/windows/package-manager/winget/troubleshooting).
 
@@ -207,7 +206,13 @@ overgeslagen.
 
 ### Installatielijst
 
-Voor de apps werkt het installatiescript eerst WinGet zelf bij via
+Voor de apps ververst het installatiescript de bron met `winget source update --name winget`.
+Het controleert daarna of de geregistreerde pakketindex minstens zo nieuw is als de
+versie die Microsoft aan het begin van de controle aanbiedt. Een actuele index is
+voldoende. Bij een bronfout of een achterblijvende of oncontroleerbare index stopt
+setup vóór de app-installatie en de Windows-configuratie.
+
+Daarna werkt het installatiescript WinGet zelf bij via
 `winget upgrade --id Microsoft.AppInstaller --exact --source winget`.
 Dit gebeurt zonder extra vragen en alleen als een nieuwere versie beschikbaar is;
 er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het script
