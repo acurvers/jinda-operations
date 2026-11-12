@@ -26,7 +26,9 @@ voor de afsluitende accolade; standaard kiest init US-International.
 
 ## Keuzes vooraf
 
-Na de eventuele UAC-vraag stelt init alle vragen voordat apps worden gedownload of Windows wordt aangepast:
+Init biedt Windows Hello eerst aan vanuit de sessie van de ingelogde gebruiker.
+Na de eventuele UAC-vraag stelt init de overige vragen voordat het apps downloadt
+of Windows configureert.
 
 De eigen vragen, statusmeldingen, waarschuwingen en foutmeldingen van de drie scripts
 zijn in het Engels. Uitvoer van Windows, WinGet en andere externe programma's volgt
@@ -36,6 +38,7 @@ hun eigen taalinstelling.
 
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
+| Set up a Windows Hello PIN for this Windows account? | Nee | Slaat Windows Hello over |
 | Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de vijf essentiële apps over |
 | Install optional apps? | Nee | Slaat de overige apps over |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
@@ -47,6 +50,13 @@ Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
 Daarna draaien de deelscripts met `-NonInteractive`; ze stellen geen verdere vragen.
 De Windows-taalconfiguratie wordt ook uitgevoerd als je apps overslaat.
+
+De PIN-vraag verschijnt alleen op het interactieve Windows-bureaublad wanneer
+Windows Hello voor die gebruiker nog niet is ingesteld. Bij **Y** opent Windows
+de eigen dialoog waarin je de PIN invoert. Ga daarna terug naar PowerShell en
+druk op Enter om de setup te vervolgen. Heeft het lokale account een leeg
+wachtwoord, stel dan eerst een wachtwoord in. Met `-WindowsHelloPin No` kun je
+de stap overslaan.
 
 Voor vooraf ingevulde keuzes kun je `-InstallEssentialApps Yes|No`, `-InstallOptionalApps Yes|No`,
 `-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No` en
@@ -219,8 +229,8 @@ overgeslagen.
 Voor de apps ververst het installatiescript de bron met `winget source update --name winget`.
 Het controleert daarna of de geregistreerde pakketindex minstens zo nieuw is als de
 versie die Microsoft aan het begin van de controle aanbiedt. Een actuele index is
-voldoende. Als WinGet in een achtergrondsessie succes meldt terwijl de index
-achterblijft, registreert setup het officiële Microsoft-bronpakket voor het
+voldoende. Als WinGet succes meldt terwijl de index ontbreekt of achterblijft,
+registreert setup het officiële Microsoft-bronpakket voor het
 uitvoerende account en controleert de versie opnieuw. Bij een bronfout of een
 achterblijvende of oncontroleerbare index stopt setup vóór de app-installatie
 en de Windows-configuratie.

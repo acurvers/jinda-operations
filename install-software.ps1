@@ -623,9 +623,9 @@ function Update-JindaWinGetSource {
             throw "WinGet source update failed (exit code $updateExitCode / 0x$exitCodeHex)."
         }
 
-        # In service sessions, WinGet can report success while the old package remains registered.
+        # WinGet can report success while the old package remains registered.
         $localVersion = Get-JindaWinGetIndexVersion
-        if ((-not $localVersion -or $localVersion -lt $offeredVersion) -and (Get-Process -Id $PID).SessionId -eq 0) {
+        if (-not $localVersion -or $localVersion -lt $offeredVersion) {
             Write-Host 'WinGet left the index out of date. Registering the Microsoft source package for this account...'
             $sourcePackage = Join-Path $env:TEMP ('jinda-winget-source-' + [guid]::NewGuid().ToString('N') + '.msix')
             try {

@@ -238,6 +238,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         Mock Start-Transcript {}
         Mock Stop-Transcript {}
         Mock Invoke-JindaInitialization { 0 }
+        Mock Invoke-JindaWindowsHelloPinSetup {}
     }
 
     It 'keeps the switch through an administrator relaunch' {
@@ -252,6 +253,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         $OpenSSH = 'Yes'
         $LanIPAddress = '10.20.30.40'
         & $script:initEntry
+        Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 1 -Exactly -Scope It
         Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
             $Elevate -and $ScriptArguments -contains '-RepairWinGet' -and
             $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
@@ -283,5 +285,12 @@ Describe 'Initialization entry point forwards the repair switch' {
         Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter {
             $RepairWinGet -and $OpenSSH -eq 'Yes' -and $InstallEssentialApps -eq 'No' -and $InstallOptionalApps -eq 'Yes'
         }
+    }
+
+    It 'does not offer PIN enrollment again in the relaunched process' {
+        $RuntimeReady = $true
+        & $script:initEntry
+        Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It
     }
 }

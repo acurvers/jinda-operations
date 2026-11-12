@@ -96,16 +96,23 @@ Describe 'All requested Jinda applications' {
         $script:sourceMessages[-1] | Should Be ''
         $script:wingetUpgradeCalls.Count | Should Be 0
         $script:wingetCalls.Count | Should Be 0
+        Assert-MockCalled Add-AppxPackage -Times 0 -Exactly -Scope It
     }
 
-    It 'aborts when the registered index stays old despite a successful WinGet exit code' {
+    It 'repairs an outdated source from the interactive desktop before upgrading WinGet or installing apps' {
         $script:localIndexVersion = '2026.1108.1134.26'
-        { Install-JindaSoftware -EnableOpenSSH } | Should Throw 'The local WinGet index (2026.1108.1134.26) is older than the version offered by Microsoft (2026.1111.1420.27)'
-        $script:wingetUpgradeCalls.Count | Should Be 0
-        $script:wingetCalls.Count | Should Be 0
-        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
-        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
-        Assert-MockCalled Add-AppxPackage -Times 0 -Exactly -Scope It
+        Mock Invoke-WebRequest {} -ParameterFilter {
+            $Uri -eq 'https://cdn.winget.microsoft.com/cache/source2.msix' -and $OutFile -like '*jinda-winget-source-*.msix'
+        }
+        Mock Add-AppxPackage {
+            $script:wingetSequence.Add('register source')
+            $script:localIndexVersion = '2026.1111.1420.27'
+        }
+        Install-JindaSoftware | Should Be $false
+        ($script:wingetSequence[0..3] -join ',') | Should Be 'source,register source,upgrade,install'
+        Assert-MockCalled Get-AppxPackage -Times 2 -Exactly -Scope It -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Assert-MockCalled Remove-Item -Times 1 -Exactly -Scope It -ParameterFilter { $LiteralPath -like '*jinda-winget-source-*.msix' }
+        $script:wingetCalls.Count | Should Be 20
     }
 
     It 'registers the official source in a service session and verifies it before installing apps' {
@@ -123,7 +130,6 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'stops and removes the temporary package when source registration fails' {
-        $script:windowsSessionId = 0
         $script:localIndexVersion = '2026.1108.1134.26'
         Mock Invoke-WebRequest {} -ParameterFilter { $OutFile -like '*jinda-winget-source-*.msix' }
         Mock Add-AppxPackage { throw 'Simulated AppX error' }
@@ -133,12 +139,15 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 0
     }
 
-    It 'stops if source registration returns without updating the index' {
-        $script:windowsSessionId = 0
+    It 'stops before any installation if the registered index is still old after repair' {
         $script:localIndexVersion = '2026.1108.1134.26'
         Mock Invoke-WebRequest {} -ParameterFilter { $OutFile -like '*jinda-winget-source-*.msix' }
         Mock Add-AppxPackage {}
-        { Install-JindaSoftware } | Should Throw 'The local WinGet index (2026.1108.1134.26) is older'
+        { Install-JindaSoftware -EnableOpenSSH } | Should Throw 'The local WinGet index (2026.1108.1134.26) is older than the version offered by Microsoft (2026.1111.1420.27)'
+        Assert-MockCalled Add-AppxPackage -Times 1 -Exactly -Scope It
+        Assert-MockCalled Get-AppxPackage -Times 2 -Exactly -Scope It -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
         $script:wingetUpgradeCalls.Count | Should Be 0
         $script:wingetCalls.Count | Should Be 0
     }
@@ -155,9 +164,12 @@ Describe 'All requested Jinda applications' {
         $script:wingetSequence.Count | Should Be 0
     }
 
-    It 'aborts when the WinGet index is not registered after updating' {
+    It 'aborts when the WinGet index is still unregistered after repair' {
         Mock Get-AppxPackage {} -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
+        Mock Invoke-WebRequest {} -ParameterFilter { $OutFile -like '*jinda-winget-source-*.msix' }
+        Mock Add-AppxPackage {}
         { Install-JindaSoftware } | Should Throw 'The WinGet package index is not registered'
+        Assert-MockCalled Add-AppxPackage -Times 1 -Exactly -Scope It
         $script:wingetUpgradeCalls.Count | Should Be 0
         $script:wingetCalls.Count | Should Be 0
     }

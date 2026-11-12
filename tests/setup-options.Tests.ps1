@@ -1,5 +1,60 @@
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'init.ps1')
 
+Describe 'Optional Windows Hello PIN enrollment' {
+    BeforeEach {
+        $script:pinSetupAnswer = ''
+        Mock Test-JindaDesktopSession { $true }
+        Mock Get-JindaWindowsHelloAvailability { 'NotConfiguredForUser' }
+        Mock Read-Host {
+            if ($Prompt -like 'Set up a Windows Hello PIN*') { $script:pinSetupAnswer }
+        }
+        Mock Start-Process {}
+    }
+
+    It 'opens the Windows enrollment dialog after a Yes answer' {
+        $script:pinSetupAnswer = 'y'
+        Invoke-JindaWindowsHelloPinSetup
+        Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Prompt -match '\[y/N\]$' }
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
+            $FilePath -eq 'ms-settings:signinoptions-launchpinenrollment'
+        }
+    }
+
+    It 'defaults to No when the user presses Enter' {
+        Invoke-JindaWindowsHelloPinSetup
+        Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
+
+    It 'skips a user who has already set up Windows Hello even when Yes is selected' {
+        Mock Get-JindaWindowsHelloAvailability { 'Available' }
+        Invoke-JindaWindowsHelloPinSetup -Choice Yes
+        Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
+
+    It 'skips a session without the original interactive desktop user' {
+        Mock Test-JindaDesktopSession { $false }
+        Invoke-JindaWindowsHelloPinSetup
+        Assert-MockCalled Get-JindaWindowsHelloAvailability -Times 0 -Exactly -Scope It
+        Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
+
+    It 'reports an unavailable Windows Hello check without opening Settings' {
+        Mock Get-JindaWindowsHelloAvailability { 'DisabledByPolicy' }
+        Invoke-JindaWindowsHelloPinSetup -WarningVariable warnings
+        ($warnings -join ' ') | Should Match 'DisabledByPolicy'
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
+
+    It 'skips the checks and dialog in WhatIf mode' {
+        Invoke-JindaWindowsHelloPinSetup -WhatIf
+        Assert-MockCalled Test-JindaDesktopSession -Times 0 -Exactly -Scope It
+        Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
+    }
+}
+
 Describe 'Choices are collected once before unattended setup' {
     BeforeEach {
         $script:answers = New-Object 'System.Collections.Generic.Queue[string]'

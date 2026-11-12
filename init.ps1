@@ -26,6 +26,9 @@ Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on 
 The question defaults to No and is independent of the apps choice.
 .PARAMETER RemoveBundledApps
 Ask (default), Yes or No. Removes LinkedIn and Microsoft Solitaire Collection. Defaults to No.
+.PARAMETER WindowsHelloPin
+Ask (default), Yes or No. Offers to open Windows Hello setup for the signed-in desktop user.
+The question defaults to No and only appears when Windows Hello is not configured.
 .PARAMETER LanIPAddress
 Optional active IPv4 address of the target PC. Otherwise, the LAN is selected at startup.
 .PARAMETER SshPublicKey
@@ -45,6 +48,7 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$WindowsHelloPin = 'Ask',
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -229,6 +233,73 @@ function Read-JindaYesNo {
     }
 }
 
+function Test-JindaDesktopSession {
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected -or
+        [Environment]::GetCommandLineArgs() -contains '-NonInteractive') { return $false }
+
+    $sessionId = (Get-Process -Id $PID -ErrorAction Stop).SessionId
+    if ($sessionId -eq 0) { return $false }
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    # An alternate administrator can share the desktop session but owns a different account.
+    $shells = Get-CimInstance Win32_Process -Filter "Name='explorer.exe' AND SessionId=$sessionId" -ErrorAction Stop
+    foreach ($shell in $shells) {
+        $owner = Invoke-CimMethod -InputObject $shell -MethodName GetOwnerSid -ErrorAction Stop
+        if ($owner.ReturnValue -eq 0 -and $owner.Sid -eq $sid) { return $true }
+    }
+    return $false
+}
+
+function Get-JindaWindowsHelloAvailability {
+    $checkAvailability = {
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        Add-Type -AssemblyName System.Runtime.WindowsRuntime
+        $verifier = [Windows.Security.Credentials.UI.UserConsentVerifier,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]
+        $availability = [Windows.Security.Credentials.UI.UserConsentVerifierAvailability,Windows.Security.Credentials.UI,ContentType=WindowsRuntime]
+        $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+            $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+        }
+        $task = $asTask.MakeGenericMethod($availability).Invoke($null, @($verifier::CheckAvailabilityAsync()))
+        if (-not $task.Wait([TimeSpan]::FromSeconds(10))) { throw 'Windows Hello availability check timed out.' }
+        return [string]$task.Result
+    }
+
+    if ($PSVersionTable.PSEdition -eq 'Desktop') { return (& $checkAvailability) }
+    # Windows PowerShell 5.1 provides the .NET Framework WinRT projection.
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($checkAvailability.ToString()))
+    $result = & (Get-JindaWindowsPowerShell) -NoProfile -NonInteractive -EncodedCommand $encoded
+    if ($LASTEXITCODE -ne 0) { throw "Windows Hello availability check failed (exit code $LASTEXITCODE)." }
+    return $result
+}
+
+function Invoke-JindaWindowsHelloPinSetup {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([ValidateSet('Ask', 'Yes', 'No')][string]$Choice = 'Ask')
+
+    if ($Choice -eq 'No' -or -not $PSCmdlet.ShouldProcess('Windows Hello', 'Offer PIN setup for the signed-in desktop user')) { return }
+    try {
+        if (-not (Test-JindaDesktopSession)) {
+            if ($Choice -eq 'Yes') { Write-Warning 'Start setup from the desktop of the Windows account that needs the PIN.' }
+            return
+        }
+        $availability = Get-JindaWindowsHelloAvailability
+        if ($availability -eq 'Available') { return }
+        if ($availability -ne 'NotConfiguredForUser') {
+            Write-Warning "Windows Hello PIN setup was skipped (availability: $availability)."
+            return
+        }
+        if (-not (Read-JindaYesNo -Prompt 'Set up a Windows Hello PIN for this Windows account?' -Choice $Choice)) { return }
+
+        # https://learn.microsoft.com/windows/apps/develop/launch/launch-settings
+        Start-Process 'ms-settings:signinoptions-launchpinenrollment' -ErrorAction Stop
+        $null = Read-Host 'Complete or close PIN setup in Windows Settings, then press Enter here'
+    }
+    catch {
+        Write-Warning "Could not complete the Windows Hello PIN setup step: $($_.Exception.Message)"
+    }
+}
+
 function Select-JindaLanAddress {
     param([string]$Address)
     $candidates = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
@@ -378,6 +449,8 @@ function Invoke-JindaInitialization {
 # Dot-sourcing defines functions only, for tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
+        # Keep PIN enrollment in the original desktop user's context before any UAC relaunch.
+        if (-not $RuntimeReady) { Invoke-JindaWindowsHelloPinSetup -Choice $WindowsHelloPin -WhatIf:$WhatIfPreference }
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
         if ($InstallEssentialApps -ne 'Ask') { $scriptArguments += @('-InstallEssentialApps', $InstallEssentialApps) }
         if ($InstallOptionalApps -ne 'Ask') { $scriptArguments += @('-InstallOptionalApps', $InstallOptionalApps) }
