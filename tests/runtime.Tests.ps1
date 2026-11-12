@@ -76,6 +76,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Mock Set-JindaLocalPasswordAgePolicy {}
         Mock Set-JindaBlankPasswordPolicy {}
         Mock Set-JindaBrowserBookmarks {}
+        Mock Set-JindaStoreUpdates {}
         Mock Uninstall-JindaBundledApps { $false }
         Mock Get-LanRemoteAccessPlan { [pscustomobject]@{ Address='10.20.30.40'; Subnet='10.20.30.0/24' } }
         Mock Invoke-LanRemoteAccessSetup {}
@@ -101,11 +102,13 @@ Describe 'Runtime discovery and Windows language compatibility' {
             Assert-MockCalled Set-JindaWindowsEnglish -Times 1 -Exactly -Scope It -ParameterFilter { $Keyboard -eq 'USInternational' }
             Assert-MockCalled Set-JindaLocalPasswordAgePolicy -Times 1 -Exactly -Scope It
             Assert-MockCalled Set-JindaBrowserBookmarks -Times 1 -Exactly -Scope It
+            Assert-MockCalled Set-JindaStoreUpdates -Times 1 -Exactly -Scope It
             Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
         } else {
             Assert-MockCalled Set-JindaWindowsEnglish -Times 0 -Exactly -Scope It
             Assert-MockCalled Set-JindaLocalPasswordAgePolicy -Times 0 -Exactly -Scope It
             Assert-MockCalled Set-JindaBrowserBookmarks -Times 0 -Exactly -Scope It
+            Assert-MockCalled Set-JindaStoreUpdates -Times 0 -Exactly -Scope It
             Assert-MockCalled Invoke-JindaChildProcess -Times 1 -Exactly -Scope It -ParameterFilter {
                 -not $Elevate -and $Executable -like '*WindowsPowerShell*' -and
                 $ScriptArguments -contains '-WindowsLanguageWorker' -and
@@ -123,6 +126,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Invoke-JindaConfiguration -ScriptPath 'C:\config.ps1' -Keyboard US -RemoveBundledApps | Should Be 3010
         if ($PSVersionTable.PSEdition -eq 'Desktop') {
             Assert-MockCalled Uninstall-JindaBundledApps -Times 1 -Exactly -Scope It
+            Assert-MockCalled Set-JindaStoreUpdates -Times 1 -Exactly -Scope It
             Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
         } else {
             Assert-MockCalled Uninstall-JindaBundledApps -Times 0 -Exactly -Scope It

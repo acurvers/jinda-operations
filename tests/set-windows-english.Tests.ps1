@@ -5,6 +5,63 @@ $projectPath = Split-Path -Parent $PSScriptRoot
 Import-Module International
 Import-Module LanguagePackManagement
 
+Describe 'Microsoft Store updates' {
+    BeforeEach {
+        $script:storePolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore'
+        $script:storePolicyExists = $false
+        $script:autoDownload = 2
+        $script:policyAtScan = $null
+        Mock Test-JindaAdministrator { $true }
+        Mock Test-Path { $script:storePolicyExists } -ParameterFilter { $LiteralPath -eq $script:storePolicyPath }
+        Mock New-Item { $script:storePolicyExists = $true }
+        Mock New-ItemProperty { $script:autoDownload = $Value }
+        Mock Get-ItemProperty { [pscustomobject]@{ AutoDownload = $script:autoDownload } }
+        Mock Start-ScheduledTask { $script:policyAtScan = $script:autoDownload }
+    }
+
+    It 'enables and verifies the device policy before requesting the Windows background scan' {
+        Set-JindaStoreUpdates
+        Assert-MockCalled New-Item -Times 1 -Exactly -Scope It -ParameterFilter { $Path -eq $script:storePolicyPath }
+        Assert-MockCalled New-ItemProperty -Times 1 -Exactly -Scope It -ParameterFilter {
+            $LiteralPath -eq $script:storePolicyPath -and $Name -eq 'AutoDownload' -and $PropertyType -eq 'DWord' -and $Value -eq 4
+        }
+        Assert-MockCalled Get-ItemProperty -Times 1 -Exactly -Scope It -ParameterFilter {
+            $LiteralPath -eq $script:storePolicyPath -and $Name -eq 'AutoDownload'
+        }
+        Assert-MockCalled Start-ScheduledTask -Times 1 -Exactly -Scope It -ParameterFilter {
+            $TaskPath -eq '\Microsoft\Windows\InstallService\' -and $TaskName -eq 'ScanForUpdates'
+        }
+        $script:policyAtScan | Should Be 4
+    }
+
+    It 'preserves the existing Store policy key when configuring updates' {
+        $script:storePolicyExists = $true
+        Set-JindaStoreUpdates
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        $script:policyAtScan | Should Be 4
+    }
+
+    It 'does not request the scan when the policy cannot be verified' {
+        Mock New-ItemProperty {}
+        { Set-JindaStoreUpdates } | Should Throw 'Could not verify the automatic Microsoft Store update policy'
+        Assert-MockCalled Start-ScheduledTask -Times 0 -Exactly -Scope It
+    }
+
+    It 'warns if the scan cannot start and keeps the verified policy applied' {
+        Mock Start-ScheduledTask { throw 'Simulated scheduled task failure' }
+        Set-JindaStoreUpdates -WarningVariable warnings
+        ($warnings -join ' ') | Should Match 'Could not start the Microsoft Store background update scan: Simulated scheduled task failure'
+        $script:autoDownload | Should Be 4
+    }
+
+    It 'leaves policy and task alone in WhatIf mode' {
+        Set-JindaStoreUpdates -WhatIf
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled New-ItemProperty -Times 0 -Exactly -Scope It
+        Assert-MockCalled Start-ScheduledTask -Times 0 -Exactly -Scope It
+    }
+}
+
 Describe 'Optional removal of bundled Windows apps' {
     BeforeEach {
         Mock Test-JindaAdministrator { $true }

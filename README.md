@@ -111,6 +111,13 @@ een interactieve Windows-sessie vereist. Andere installatiefouten breken de setu
 Een software-exitcode 3010 (herstart nodig) laat de configuratie doorgaan. Als de installatie of configuratie
 3010 teruggeeft, meldt init aan het eind dat een herstart nodig is. Init start Windows niet zelf opnieuw op.
 
+## Microsoft Store-updates
+
+De Windows-configuratie zet automatische Store-updates aan voor de hele pc en
+vraagt een updatescan aan via de ingebouwde Windows-taak `ScanForUpdates`.
+Windows verwerkt de scan en beschikbare Store-updates op de achtergrond.
+De setup meldt een waarschuwing als de scan niet kan starten.
+
 ## Standaardbeleid voor lokale Windows-accounts
 
 Het configuratiescript zet `LimitBlankPasswordUse` op `0`. Daardoor staat

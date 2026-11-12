@@ -13,6 +13,7 @@ These address restrictions are retained when the script is run again.
 Adds Jinda Operations as a managed bookmark in Chrome and Edge for all Windows users.
 Personal bookmarks are unchanged; Edge excludes profiles signed in with a personal Microsoft account.
 Disables age-based password expiration for existing and future local Windows accounts.
+Enables automatic Microsoft Store updates and requests a background scan.
 .PARAMETER Keyboard
 US (default) or USInternational. Regional date and number formats are preserved.
 .PARAMETER EnableRemoteDesktop
@@ -729,6 +730,37 @@ function Set-JindaBlankPasswordPolicy {
     Write-Host 'Windows allows remote sign-in for local accounts with blank passwords, subject to service-specific access rules.'
 }
 
+function Set-JindaStoreUpdates {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Microsoft Store on this PC', 'Enable automatic app updates and request a background scan')) { return }
+    if (-not (Test-JindaAdministrator) -or -not [Environment]::Is64BitProcess) {
+        throw 'Microsoft Store update policy requires a 64-bit administrator PowerShell process.'
+    }
+
+    # The Store policy uses 4 to allow automatic downloads and installation.
+    # https://learn.microsoft.com/windows/msix/group-policy-msix
+    $policyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore'
+    if (-not (Test-Path -LiteralPath $policyPath)) {
+        $null = New-Item -Path $policyPath -ErrorAction Stop
+    }
+    $null = New-ItemProperty -LiteralPath $policyPath -Name AutoDownload -PropertyType DWord -Value 4 -Force -ErrorAction Stop
+    if ((Get-ItemProperty -LiteralPath $policyPath -Name AutoDownload -ErrorAction Stop).AutoDownload -ne 4) {
+        throw 'Could not verify the automatic Microsoft Store update policy.'
+    }
+    Write-Host 'Microsoft Store automatic app updates are enabled for this PC.'
+
+    try {
+        # Windows runs this built-in InstallService task as SYSTEM in the background.
+        Start-ScheduledTask -TaskPath '\Microsoft\Windows\InstallService\' -TaskName 'ScanForUpdates' -ErrorAction Stop
+        Write-Host 'Microsoft Store background update scan requested.'
+    }
+    catch {
+        Write-Warning "Could not start the Microsoft Store background update scan: $($_.Exception.Message)"
+    }
+}
+
 function Uninstall-JindaBundledApps {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -798,7 +830,10 @@ function Invoke-JindaConfiguration {
         $remotePlan | Select-Object Address, RemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
         Invoke-LanRemoteAccessSetup -Plan $remotePlan | Out-Host
     }
-    if ($RemoveBundledApps -and (Uninstall-JindaBundledApps)) { return 3010 }
+    $restartNeeded = $RemoveBundledApps -and (Uninstall-JindaBundledApps)
+    Write-Host ''
+    Set-JindaStoreUpdates
+    if ($restartNeeded) { return 3010 }
     return 0
 }
 
