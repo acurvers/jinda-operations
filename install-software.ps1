@@ -540,8 +540,6 @@ function Get-JindaSoftwarePackages {
         # Current desktop OneNote, not the retired OneNote for Windows 10.
         @{ Id = 'XPFFZHVGQWWLHB'; Name = 'OneNote'; Source = 'msstore'; Scope = ''; Extra = @() }
         @{ Id = 'Notepad++.Notepad++'; Name = 'Notepad++'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
-        # Temporarily disabled: Discord installation is not working reliably (user report).
-        # @{ Id = 'Discord.Discord'; Name = 'Discord'; Source = 'winget'; Scope = 'user'; Extra = @() }
         @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
         @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @(); Essential = $true }
@@ -577,6 +575,7 @@ function Get-JindaSkippedApps {
     if (Test-Path -LiteralPath $LocalPath -ErrorAction Stop) {
         $configPaths += $LocalPath
     }
+    # Accept old local skip files that still list Discord.
     $knownIds = @(Get-JindaSoftwarePackages | ForEach-Object { $_.Id }) + @('Discord.Discord', 'Microsoft.Teams')
     $skipped = @()
     foreach ($configPath in $configPaths) {

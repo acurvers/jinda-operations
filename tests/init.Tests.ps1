@@ -11,6 +11,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         }
         Mock New-Item {}
         Mock Repair-JindaWinGet { $script:initEvents.Add('repair') }
+        Mock Uninstall-JindaDiscord {}
         Mock Test-Path { $script:initEvents.Add("validate:$LiteralPath"); $true }
         Mock Invoke-WebRequest { throw 'Unexpected download' }
         Mock Write-Host {}
@@ -29,6 +30,7 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Invoke-JindaInitialization | Should Be 0
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed.' }
         Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like '*Restart Windows*' }
+        Assert-MockCalled Uninstall-JindaDiscord -Times 0 -Exactly -Scope It
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
         $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
@@ -115,6 +117,22 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initExitCodes = @(1, 0)
         { Invoke-JindaInitialization } | Should Throw 'Software installation failed'
         $script:initLaunches.Count | Should Be 1
+    }
+
+    It 'removes Discord and records the choice even when both app groups are declined' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{
+                InstallEssentialApps = $false; InstallOptionalApps = $false
+                RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false
+                RemoveBundledApps = $false; RemoveDiscord = $true; LanIPAddress = ''
+            }
+        }
+        Invoke-JindaInitialization -RemoveDiscord Yes | Should Be 0
+        Assert-MockCalled Get-JindaSetupOptions -Times 1 -Exactly -Scope It -ParameterFilter { $RemoveDiscord -eq 'Yes' }
+        Assert-MockCalled Uninstall-JindaDiscord -Times 1 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Uninstall Discord: Yes' }
+        $script:initLaunches.Count | Should Be 1
+        $script:initLaunches[0].Path | Should Match 'set-windows-english.ps1$'
     }
 
     It 'reports configuration failure instead of reporting success' {
@@ -262,6 +280,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         $RemoteDesktop = 'Yes'
         $PowerShellRemoting = 'No'
         $OpenSSH = 'Yes'
+        $RemoveDiscord = 'Yes'
         $LanIPAddress = '10.20.30.40'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 1 -Exactly -Scope It
@@ -270,6 +289,7 @@ Describe 'Initialization entry point forwards the repair switch' {
             $ScriptArguments -contains '-RuntimeReady' -and $ScriptArguments -contains 'US' -and
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
             ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
+            ($ScriptArguments -join ' ') -match '-RemoveDiscord Yes' -and
             ($ScriptArguments -join ' ') -match '-InstallEssentialApps Yes -InstallOptionalApps No' -and
             ($ScriptArguments -join ' ') -match '-WindowsHelloStatus Settings opened' -and
             $ScriptArguments -contains '10.20.30.40'

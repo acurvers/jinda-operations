@@ -67,13 +67,14 @@ Describe 'App skip configuration is data, never executable code' {
             Should Throw 'machine-skip-apps.conf at line 2'
     }
 
-    It 'keeps an example line for every app, including the disabled apps' {
+    It 'keeps example lines for supported apps and omits the old Discord entry' {
         $content = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'skip-apps.conf') -Raw
-        $expected = @(Get-JindaSoftwarePackages | ForEach-Object { $_.Id }) + @('Discord.Discord', 'Microsoft.Teams')
+        $expected = @(Get-JindaSoftwarePackages | ForEach-Object { $_.Id }) + 'Microsoft.Teams'
         foreach ($id in $expected) {
             $pattern = '(?m)^[ \t]*(?:#[ \t]*)?' + [regex]::Escape($id) + '[ \t]+#'
             [regex]::Matches($content, $pattern).Count | Should Be 1
         }
+        $content | Should Not Match 'Discord\.Discord'
     }
 
     It 'reads the file beside the script even when launched from a different directory' {

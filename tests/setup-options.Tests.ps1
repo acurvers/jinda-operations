@@ -60,6 +60,7 @@ Describe 'Choices are collected once before unattended setup' {
         $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
         $script:prompts = New-Object 'System.Collections.Generic.List[string]'
         Mock Read-Host { $script:prompts.Add($Prompt); $script:answers.Dequeue() }
+        Mock Test-JindaDiscordInstalled { $false }
         Mock Select-JindaLanAddress {
             [pscustomobject]@{ IPAddress = '10.20.30.40'; InterfaceAlias = 'Ethernet'; PrefixLength = 24 }
         }
@@ -74,6 +75,7 @@ Describe 'Choices are collected once before unattended setup' {
         $options.PowerShellRemoting | Should Be $false
         $options.OpenSSH | Should Be $false
         $options.RemoveBundledApps | Should Be $false
+        $options.RemoveDiscord | Should Be $false
         $script:prompts.Count | Should Be 6
         $script:prompts[0] | Should Be 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? [Y/n]'
         $script:prompts[1] | Should Be 'Install optional apps? [y/N]'
@@ -82,6 +84,19 @@ Describe 'Choices are collected once before unattended setup' {
         $script:prompts[4] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
         $script:prompts[5] | Should Be 'Uninstall unwanted apps? [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
+    }
+
+    It 'offers Discord removal only when installed and defaults to No' -TestCases @(
+        @{ Answer = ''; Expected = $false }
+        @{ Answer = 'y'; Expected = $true }
+    ) {
+        param($Answer, $Expected)
+        Mock Test-JindaDiscordInstalled { $true }
+        $script:answers.Enqueue($Answer)
+        $options = Get-JindaSetupOptions -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No
+        $options.RemoveDiscord | Should Be $Expected
+        $script:prompts.Count | Should Be 1
+        $script:prompts[0] | Should Be 'Uninstall Discord? [y/N]'
     }
 
     It 'accepts independent yes/no choices and selects the LAN before returning' {
@@ -171,5 +186,48 @@ Describe 'LAN selection at startup' {
         { Select-JindaLanAddress } | Should Throw 'No active IPv4 LAN'
         $script:addresses[0].IPAddress = '169.254.1.2'
         { Select-JindaLanAddress } | Should Throw 'No active IPv4 LAN'
+    }
+}
+
+function Invoke-TestDiscordWinGet {
+    $script:discordWinGetArguments = @($args)
+    $global:LASTEXITCODE = $script:discordWinGetExitCode
+}
+
+Describe 'Discord desktop removal' {
+    It 'recognizes the official Discord entry and ignores other Discord variants' {
+        $script:uninstallEntries = @(
+            [pscustomobject]@{ DisplayName = 'Discord PTB'; Publisher = 'Discord Inc.' }
+            [pscustomobject]@{ DisplayName = 'Discord'; Publisher = 'Other Publisher' }
+        )
+        Mock Get-ItemProperty { $script:uninstallEntries }
+        Test-JindaDiscordInstalled | Should Be $false
+        $script:uninstallEntries += [pscustomobject]@{ DisplayName = 'Discord'; Publisher = 'Discord Inc.' }
+        Test-JindaDiscordInstalled | Should Be $true
+    }
+
+    It 'calls WinGet silently for Discord and verifies the removal' {
+        $script:discordWinGetArguments = @()
+        $script:discordWinGetExitCode = 0
+        Mock Test-JindaDiscordInstalled { $script:discordWinGetArguments.Count -eq 0 }
+        Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-TestDiscordWinGet' } } -ParameterFilter { $Name -eq 'winget.exe' }
+        Mock Write-Host {}
+
+        Uninstall-JindaDiscord
+
+        ($script:discordWinGetArguments -join ' ') |
+            Should Be 'uninstall --name Discord --exact --source winget --silent --accept-source-agreements --disable-interactivity'
+        Assert-MockCalled Test-JindaDiscordInstalled -Times 2 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Discord was uninstalled.' }
+    }
+
+    It 'reports an uninstall failure without claiming Discord was removed' {
+        $script:discordWinGetExitCode = 1
+        Mock Test-JindaDiscordInstalled { $true }
+        Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-TestDiscordWinGet' } } -ParameterFilter { $Name -eq 'winget.exe' }
+        Mock Write-Host {}
+
+        { Uninstall-JindaDiscord } | Should Throw 'WinGet uninstall failed (exit code 1 / 0x00000001)'
+        Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -eq 'Discord was uninstalled.' }
     }
 }

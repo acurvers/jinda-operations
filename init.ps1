@@ -26,6 +26,8 @@ Ask (default), Yes or No. Installs the OpenSSH client/server and enables SSH on 
 The question defaults to No and is independent of the apps choice.
 .PARAMETER RemoveBundledApps
 Ask (default), Yes or No. Removes LinkedIn and Microsoft Solitaire Collection. Defaults to No.
+.PARAMETER RemoveDiscord
+Ask (default), Yes or No. Offers to remove Discord if installed. The question defaults to No.
 .PARAMETER WindowsHelloPin
 Ask (default), Yes or No. Offers to open Windows Hello setup for the signed-in desktop user.
 The question defaults to No and only appears when Windows Hello is not configured.
@@ -52,7 +54,8 @@ param(
     [Parameter(DontShow = $true)]
     [ValidateSet('Not checked', 'Skipped', 'No desktop session', 'Already available', 'Unavailable', 'Settings opened', 'Error')]
     [string]$WindowsHelloStatus = 'Not checked',
-    [Parameter(DontShow = $true)][switch]$RuntimeReady
+    [Parameter(DontShow = $true)][switch]$RuntimeReady,
+    [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveDiscord = 'Ask'
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -339,11 +342,44 @@ function Select-JindaLanAddress {
     return $selected[0]
 }
 
+function Test-JindaDiscordInstalled {
+    $uninstallPaths = @(
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    $discord = Get-ItemProperty -Path $uninstallPaths -ErrorAction SilentlyContinue | Where-Object {
+        $_.DisplayName -eq 'Discord' -and $_.Publisher -match '^Discord(?:,? Inc\.?)?$'
+    } | Select-Object -First 1
+    return [bool]$discord
+}
+
+function Uninstall-JindaDiscord {
+    if (-not (Test-JindaDiscordInstalled)) {
+        Write-Host 'Discord is already absent.'
+        return
+    }
+
+    $winget = Get-Command -Name 'winget.exe' -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $winget) { throw 'WinGet is unavailable. Remove Discord from Windows Settings > Apps > Installed apps.' }
+
+    Write-Host 'Uninstalling Discord using WinGet...'
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $winget.Source uninstall --name Discord --exact --source winget --silent --accept-source-agreements --disable-interactivity | Out-Host
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        $exitCodeHex = '{0:X8}' -f ($exitCode -band 0xFFFFFFFFL)
+        throw "Discord: WinGet uninstall failed (exit code $exitCode / 0x$exitCodeHex)."
+    }
+    if (Test-JindaDiscordInstalled) { throw 'Discord is still registered as installed after WinGet returned success.' }
+    Write-Host 'Discord was uninstalled.'
+}
+
 function Get-JindaSetupOptions {
     param(
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
         [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask',
-        [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask',
+        [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask', [string]$RemoveDiscord = 'Ask',
         [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
@@ -355,12 +391,17 @@ function Get-JindaSetupOptions {
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
     $removeApps = Read-JindaYesNo -Prompt 'Uninstall unwanted apps?' -Choice $RemoveBundledApps
+    $uninstallDiscord = $false
+    if ($RemoveDiscord -ne 'No' -and (Test-JindaDiscordInstalled)) {
+        $uninstallDiscord = Read-JindaYesNo -Prompt 'Uninstall Discord?' -Choice $RemoveDiscord
+    }
     $lan = $null
     if ($rdp -or $winrm -or $ssh) { $lan = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
         InstallEssentialApps = $essential; InstallOptionalApps = $optional
         RemoteDesktop = $rdp; PowerShellRemoting = $winrm
         OpenSSH = $ssh; RemoveBundledApps = $removeApps
+        RemoveDiscord = $uninstallDiscord
         LanIPAddress = [string]$lan.IPAddress
         LanInterfaceAlias = $lan.InterfaceAlias
         LanPrefixLength = $lan.PrefixLength
@@ -380,6 +421,7 @@ function Invoke-JindaInitialization {
         [string]$LanIPAddress,
         [string]$SshPublicKey,
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveDiscord = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
         [string]$WindowsHelloStatus = 'Not checked'
@@ -397,6 +439,7 @@ function Invoke-JindaInitialization {
         PowerShellRemoting = $PowerShellRemoting
         OpenSSH = $OpenSSH
         RemoveBundledApps = $RemoveBundledApps
+        RemoveDiscord = $RemoveDiscord
         LanIPAddress = $LanIPAddress
     }
     $options = Get-JindaSetupOptions @choices
@@ -409,6 +452,7 @@ function Invoke-JindaInitialization {
         'Enable PowerShell remoting (WinRM)' = $options.PowerShellRemoting
         'Install OpenSSH' = $options.OpenSSH
         'Uninstall unwanted apps' = $options.RemoveBundledApps
+        'Uninstall Discord' = $options.RemoveDiscord
         'Repair WinGet' = ($RepairWinGet -and $installAppsSelected)
     }
     Write-Host ''
@@ -438,6 +482,8 @@ function Invoke-JindaInitialization {
         }
     }
     Write-Host "Using scripts from GitHub package: $folder"
+
+    if ($options.RemoveDiscord) { Uninstall-JindaDiscord }
 
     $installCode = 0
     if ($installAppsSelected -or $options.OpenSSH) {
@@ -491,6 +537,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($InstallEssentialApps -ne 'Ask') { $scriptArguments += @('-InstallEssentialApps', $InstallEssentialApps) }
         if ($InstallOptionalApps -ne 'Ask') { $scriptArguments += @('-InstallOptionalApps', $InstallOptionalApps) }
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
+        if ($RemoveDiscord -ne 'Ask') { $scriptArguments += @('-RemoveDiscord', $RemoveDiscord) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
@@ -505,6 +552,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 PowerShellRemoting = $PowerShellRemoting
                 OpenSSH = $OpenSSH
                 RemoveBundledApps = $RemoveBundledApps
+                RemoveDiscord = $RemoveDiscord
                 LanIPAddress = $LanIPAddress
                 SshPublicKey = $SshPublicKey
                 WindowsHelloStatus = $WindowsHelloStatus

@@ -30,6 +30,7 @@
     <h1>Jinda Operations</h1>
     <p>Richt Windows 11 Pro in met <strong>Engels (VS) en US-International</strong>. Kies welke apps je wilt installeren en welke toegang op afstand je wilt inschakelen.</p>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Setup vraagt eerst naar <strong>essentiële apps [Y/n]</strong> en daarna naar <strong>optionele apps [y/N]</strong>. Vervolgens kies je voor Remote Desktop, WinRM, OpenSSH en het verwijderen van LinkedIn en Microsoft Solitaire Collection. Enter kiest bij die vier vragen <strong>No</strong>. Kies zo nodig het LAN.</p>
+    <p>Als Discord is geïnstalleerd, vraagt setup ook <strong>Uninstall Discord? [y/N]</strong>. Kies <strong>Y</strong> om Discord te verwijderen.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
@@ -68,7 +69,6 @@
       <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer</span></li>
       <li><img src="assets/icons/powershell.png" alt="" width="28" height="28"><span>PowerShell 7 <small>(nieuwste stabiele versie)</small></span></li>
       <li><img src="assets/icons/onenote.png" alt="" width="28" height="28"><span>OneNote</span></li>
-      <li><img src="assets/icons/discord.png" alt="" width="28" height="28"><span>Discord <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/reolink.png" alt="" width="28" height="28"><span>Reolink Client</span></li>
       <li><img src="assets/icons/paintnet.png" alt="" width="28" height="28"><span>Paint.NET</span></li>
       <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>

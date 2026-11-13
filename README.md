@@ -45,6 +45,10 @@ hun eigen taalinstelling.
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
 | Uninstall unwanted apps? | Nee | LinkedIn en Microsoft Solitaire Collection blijven staan |
+| Uninstall Discord? (alleen als Discord is geïnstalleerd) | Nee | Discord blijft staan |
+
+De Discord-keuze werkt ook als je de installatie van beide appgroepen overslaat.
+De setup controleert installaties voor het uitvoerende Windows-account en voor de hele pc.
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -59,8 +63,8 @@ wachtwoord, stel dan eerst een wachtwoord in. Met `-WindowsHelloPin No` kun je
 de stap overslaan.
 
 Voor vooraf ingevulde keuzes kun je `-InstallEssentialApps Yes|No`, `-InstallOptionalApps Yes|No`,
-`-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No` en
-`-RemoveBundledApps Yes|No` aan init meegeven. Het bestaande `-InstallApps Yes|No`
+`-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No`,
+`-RemoveBundledApps Yes|No` en `-RemoveDiscord Yes|No` aan init meegeven. Het bestaande `-InstallApps Yes|No`
 vult de keuze voor beide groepen in. Een expliciete keuze per groep heeft voorrang.
 Gebruik bij meerdere
 netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
@@ -212,7 +216,7 @@ die app over te slaan. Bijvoorbeeld:
 
 Standaard slaat het bestand niets over. Een overgeslagen app wordt niet verwijderd;
 bij VS Code wordt ook de bijbehorende PowerShell-extensie overgeslagen.
-Discord en Teams blijven tijdelijk uitgeschakeld in het script, ongeacht deze lijst.
+Teams blijft tijdelijk uitgeschakeld in het script.
 Yodeck heeft de vaste sleutel `Yodeck.Player`. Lege regels en tekst na `#` worden
 genegeerd; hoofdletters maken niet uit. Een onbekende ID of ontbrekend bestand
 stopt de installatie met een foutmelding voordat WinGet iets bijwerkt.
@@ -254,7 +258,6 @@ apps vallen onder de optionele keuze. `skip-apps.conf` geldt voor beide groepen.
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
 | Notepad++ | Notepad++.Notepad++ / winget | Alle gebruikers |
-| Discord (tijdelijk uitgeschakeld) | Discord.Discord / winget | Wordt momenteel niet geinstalleerd |
 | Reolink Client | Reolink.Reolink / winget | Standaard van installer |
 | Paint.NET | dotPDN.PaintDotNet / winget | Alle gebruikers |
 | LastPass | LastPass.LastPass / winget | Standaard van installer |
