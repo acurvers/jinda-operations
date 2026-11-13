@@ -49,6 +49,9 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$WindowsHelloPin = 'Ask',
+    [Parameter(DontShow = $true)]
+    [ValidateSet('Not checked', 'Skipped', 'No desktop session', 'Already available', 'Unavailable', 'Settings opened', 'Error')]
+    [string]$WindowsHelloStatus = 'Not checked',
     [Parameter(DontShow = $true)][switch]$RuntimeReady
 )
 
@@ -277,26 +280,29 @@ function Invoke-JindaWindowsHelloPinSetup {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([ValidateSet('Ask', 'Yes', 'No')][string]$Choice = 'Ask')
 
-    if ($Choice -eq 'No' -or -not $PSCmdlet.ShouldProcess('Windows Hello', 'Offer PIN setup for the signed-in desktop user')) { return }
+    if ($Choice -eq 'No') { return 'Skipped' }
+    if (-not $PSCmdlet.ShouldProcess('Windows Hello', 'Offer PIN setup for the signed-in desktop user')) { return 'Not checked' }
     try {
         if (-not (Test-JindaDesktopSession)) {
             if ($Choice -eq 'Yes') { Write-Warning 'Start setup from the desktop of the Windows account that needs the PIN.' }
-            return
+            return 'No desktop session'
         }
         $availability = Get-JindaWindowsHelloAvailability
-        if ($availability -eq 'Available') { return }
+        if ($availability -eq 'Available') { return 'Already available' }
         if ($availability -ne 'NotConfiguredForUser') {
             Write-Warning "Windows Hello PIN setup was skipped (availability: $availability)."
-            return
+            return 'Unavailable'
         }
-        if (-not (Read-JindaYesNo -Prompt 'Set up a Windows Hello PIN for this Windows account?' -Choice $Choice)) { return }
+        if (-not (Read-JindaYesNo -Prompt 'Set up a Windows Hello PIN for this Windows account?' -Choice $Choice)) { return 'Skipped' }
 
         # https://learn.microsoft.com/windows/apps/develop/launch/launch-settings
         Start-Process 'ms-settings:signinoptions-launchpinenrollment' -ErrorAction Stop
         $null = Read-Host 'Complete or close PIN setup in Windows Settings, then press Enter here'
+        return 'Settings opened'
     }
     catch {
         Write-Warning "Could not complete the Windows Hello PIN setup step: $($_.Exception.Message)"
+        return 'Error'
     }
 }
 
@@ -330,8 +336,7 @@ function Select-JindaLanAddress {
             Write-Host 'Please select a number from the list.'
         }
     }
-    Write-Host ('LAN for remote access: {0} - {1}/{2}.' -f $selected[0].InterfaceAlias, $selected[0].IPAddress, $selected[0].PrefixLength)
-    return [string]$selected[0].IPAddress
+    return $selected[0]
 }
 
 function Get-JindaSetupOptions {
@@ -350,12 +355,15 @@ function Get-JindaSetupOptions {
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
     $removeApps = Read-JindaYesNo -Prompt 'Uninstall unwanted apps?' -Choice $RemoveBundledApps
-    $address = ''
-    if ($rdp -or $winrm -or $ssh) { $address = Select-JindaLanAddress -Address $LanIPAddress }
+    $lan = $null
+    if ($rdp -or $winrm -or $ssh) { $lan = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
         InstallEssentialApps = $essential; InstallOptionalApps = $optional
         RemoteDesktop = $rdp; PowerShellRemoting = $winrm
-        OpenSSH = $ssh; RemoveBundledApps = $removeApps; LanIPAddress = $address
+        OpenSSH = $ssh; RemoveBundledApps = $removeApps
+        LanIPAddress = [string]$lan.IPAddress
+        LanInterfaceAlias = $lan.InterfaceAlias
+        LanPrefixLength = $lan.PrefixLength
     }
 }
 
@@ -373,7 +381,8 @@ function Invoke-JindaInitialization {
         [string]$SshPublicKey,
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveBundledApps = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
-        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask'
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
+        [string]$WindowsHelloStatus = 'Not checked'
     )
 
     $ErrorActionPreference = 'Stop'
@@ -392,6 +401,29 @@ function Invoke-JindaInitialization {
     }
     $options = Get-JindaSetupOptions @choices
     $installAppsSelected = $options.InstallEssentialApps -or $options.InstallOptionalApps
+
+    $selectedActions = [ordered]@{
+        'Install essential apps' = $options.InstallEssentialApps
+        'Install optional apps' = $options.InstallOptionalApps
+        'Enable Remote Desktop (RDP)' = $options.RemoteDesktop
+        'Enable PowerShell remoting (WinRM)' = $options.PowerShellRemoting
+        'Install OpenSSH' = $options.OpenSSH
+        'Uninstall unwanted apps' = $options.RemoveBundledApps
+        'Repair WinGet' = ($RepairWinGet -and $installAppsSelected)
+    }
+    Write-Host ''
+    Write-Host 'Setup choices'
+    foreach ($action in $selectedActions.GetEnumerator()) {
+        $answer = if ($action.Value) { 'Yes' } else { 'No' }
+        Write-Host "  $($action.Key): $answer"
+    }
+    Write-Host "  Keyboard: $Keyboard"
+    Write-Host "  Windows Hello: $WindowsHelloStatus"
+    if ($options.LanIPAddress) {
+        Write-Host ('  LAN for remote access: {0} - {1}/{2}' -f $options.LanInterfaceAlias, $options.LanIPAddress, $options.LanPrefixLength)
+    }
+    Write-Host ''
+
     if ($SshPublicKey -and -not $options.OpenSSH) {
         throw 'Select OpenSSH when providing -SshPublicKey.'
     }
@@ -450,8 +482,12 @@ function Invoke-JindaInitialization {
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         # Keep PIN enrollment in the original desktop user's context before any UAC relaunch.
-        if (-not $RuntimeReady) { Invoke-JindaWindowsHelloPinSetup -Choice $WindowsHelloPin -WhatIf:$WhatIfPreference }
+        if (-not $RuntimeReady) {
+            $pinSetupStatus = Invoke-JindaWindowsHelloPinSetup -Choice $WindowsHelloPin -WhatIf:$WhatIfPreference
+            if ($pinSetupStatus) { $WindowsHelloStatus = $pinSetupStatus }
+        }
         $scriptArguments = @('-Keyboard', $Keyboard, '-InstallApps', $InstallApps, '-RemoteDesktop', $RemoteDesktop, '-PowerShellRemoting', $PowerShellRemoting, '-OpenSSH', $OpenSSH)
+        if ($WindowsHelloStatus -ne 'Not checked') { $scriptArguments += @('-WindowsHelloStatus', $WindowsHelloStatus) }
         if ($InstallEssentialApps -ne 'Ask') { $scriptArguments += @('-InstallEssentialApps', $InstallEssentialApps) }
         if ($InstallOptionalApps -ne 'Ask') { $scriptArguments += @('-InstallOptionalApps', $InstallOptionalApps) }
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
@@ -471,6 +507,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 RemoveBundledApps = $RemoveBundledApps
                 LanIPAddress = $LanIPAddress
                 SshPublicKey = $SshPublicKey
+                WindowsHelloStatus = $WindowsHelloStatus
             }
             Invoke-JindaInitialization @setup
         }

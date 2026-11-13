@@ -206,10 +206,20 @@ Describe 'Initialization orchestrates the two existing scripts' {
 
     It 'passes both remote choices and the selected LAN to configuration' {
         Mock Get-JindaSetupOptions {
-            [pscustomobject]@{ InstallEssentialApps = $true; InstallOptionalApps = $true; RemoteDesktop = $true; PowerShellRemoting = $true; OpenSSH = $false; LanIPAddress = '10.20.30.40' }
+            [pscustomobject]@{
+                InstallEssentialApps = $true; InstallOptionalApps = $false
+                RemoteDesktop = $true; PowerShellRemoting = $true
+                OpenSSH = $false; RemoveBundledApps = $false
+                LanIPAddress = '10.20.30.40'; LanInterfaceAlias = 'Ethernet'; LanPrefixLength = 24
+            }
         }
-        Invoke-JindaInitialization | Should Be 0
+        Invoke-JindaInitialization -WindowsHelloStatus 'Settings opened' | Should Be 0
         ($script:initLaunches[1].Arguments -join ' ') | Should Be '-Keyboard USInternational -EnableRemoteDesktop -EnableWinRM -LanIPAddress 10.20.30.40'
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Setup choices' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Install essential apps: Yes' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Install optional apps: No' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  LAN for remote access: Ethernet - 10.20.30.40/24' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Windows Hello: Settings opened' }
     }
 
     It 'does not download or start anything when initial choices cannot be resolved' {
@@ -243,6 +253,7 @@ Describe 'Initialization entry point forwards the repair switch' {
 
     It 'keeps the switch through an administrator relaunch' {
         Mock Test-JindaAdministrator { $false }
+        Mock Invoke-JindaWindowsHelloPinSetup { 'Settings opened' }
         $RepairWinGet = $true
         $Keyboard = 'US'
         $InstallApps = 'No'
@@ -260,6 +271,7 @@ Describe 'Initialization entry point forwards the repair switch' {
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
             ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
             ($ScriptArguments -join ' ') -match '-InstallEssentialApps Yes -InstallOptionalApps No' -and
+            ($ScriptArguments -join ' ') -match '-WindowsHelloStatus Settings opened' -and
             $ScriptArguments -contains '10.20.30.40'
         }
         Assert-MockCalled Invoke-JindaInitialization -Times 0 -Exactly -Scope It
@@ -289,8 +301,11 @@ Describe 'Initialization entry point forwards the repair switch' {
 
     It 'does not offer PIN enrollment again in the relaunched process' {
         $RuntimeReady = $true
+        $WindowsHelloStatus = 'Settings opened'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 0 -Exactly -Scope It
-        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaInitialization -Times 1 -Exactly -Scope It -ParameterFilter {
+            $WindowsHelloStatus -eq 'Settings opened'
+        }
     }
 }

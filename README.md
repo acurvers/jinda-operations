@@ -440,7 +440,10 @@ WinRM-clientinstellingen zijn een afzonderlijke stap.
 ## Fouten en controle
 
 De uitvoer vermeldt het logbestand, onder %LOCALAPPDATA%\JindaOperations\Logs
-van het uitvoerende account. Het configuratiescript meldt de concrete fout
+van het uitvoerende account. In het init-transcript staat onder `Setup choices`
+welke opties de setup gaat uitvoeren, inclusief de gekozen LAN-adapter als die
+van toepassing is. Voor Windows Hello staat er alleen de status van de instelstap.
+Het configuratiescript meldt de concrete fout
 en de plek in het script. Bij een UAC-fout verschijnt de melding in het
 oorspronkelijke venster, voordat een log kan worden gestart.
 

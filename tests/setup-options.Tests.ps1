@@ -13,7 +13,7 @@ Describe 'Optional Windows Hello PIN enrollment' {
 
     It 'opens the Windows enrollment dialog after a Yes answer' {
         $script:pinSetupAnswer = 'y'
-        Invoke-JindaWindowsHelloPinSetup
+        Invoke-JindaWindowsHelloPinSetup | Should Be 'Settings opened'
         Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Prompt -match '\[y/N\]$' }
         Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
             $FilePath -eq 'ms-settings:signinoptions-launchpinenrollment'
@@ -21,21 +21,21 @@ Describe 'Optional Windows Hello PIN enrollment' {
     }
 
     It 'defaults to No when the user presses Enter' {
-        Invoke-JindaWindowsHelloPinSetup
+        Invoke-JindaWindowsHelloPinSetup | Should Be 'Skipped'
         Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
     }
 
     It 'skips a user who has already set up Windows Hello even when Yes is selected' {
         Mock Get-JindaWindowsHelloAvailability { 'Available' }
-        Invoke-JindaWindowsHelloPinSetup -Choice Yes
+        Invoke-JindaWindowsHelloPinSetup -Choice Yes | Should Be 'Already available'
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
     }
 
     It 'skips a session without the original interactive desktop user' {
         Mock Test-JindaDesktopSession { $false }
-        Invoke-JindaWindowsHelloPinSetup
+        Invoke-JindaWindowsHelloPinSetup | Should Be 'No desktop session'
         Assert-MockCalled Get-JindaWindowsHelloAvailability -Times 0 -Exactly -Scope It
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
@@ -43,7 +43,7 @@ Describe 'Optional Windows Hello PIN enrollment' {
 
     It 'reports an unavailable Windows Hello check without opening Settings' {
         Mock Get-JindaWindowsHelloAvailability { 'DisabledByPolicy' }
-        Invoke-JindaWindowsHelloPinSetup -WarningVariable warnings
+        Invoke-JindaWindowsHelloPinSetup -WarningVariable warnings | Should Be 'Unavailable'
         ($warnings -join ' ') | Should Match 'DisabledByPolicy'
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
     }
@@ -60,7 +60,9 @@ Describe 'Choices are collected once before unattended setup' {
         $script:answers = New-Object 'System.Collections.Generic.Queue[string]'
         $script:prompts = New-Object 'System.Collections.Generic.List[string]'
         Mock Read-Host { $script:prompts.Add($Prompt); $script:answers.Dequeue() }
-        Mock Select-JindaLanAddress { '10.20.30.40' }
+        Mock Select-JindaLanAddress {
+            [pscustomobject]@{ IPAddress = '10.20.30.40'; InterfaceAlias = 'Ethernet'; PrefixLength = 24 }
+        }
     }
 
     It 'defaults to essential apps only and prompts for both groups before other options' {
@@ -90,6 +92,8 @@ Describe 'Choices are collected once before unattended setup' {
         $options.RemoteDesktop | Should Be $true
         $options.PowerShellRemoting | Should Be $false
         $options.LanIPAddress | Should Be '10.20.30.40'
+        $options.LanInterfaceAlias | Should Be 'Ethernet'
+        $options.LanPrefixLength | Should Be 24
         $options.OpenSSH | Should Be $true
         $options.RemoveBundledApps | Should Be $true
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
@@ -140,18 +144,20 @@ Describe 'LAN selection at startup' {
     }
 
     It 'selects the only active address without another question' {
-        Select-JindaLanAddress | Should Be '10.20.30.40'
+        (Select-JindaLanAddress).IPAddress | Should Be '10.20.30.40'
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
     }
 
     It 'asks which interface when multiple addresses are active' {
         $script:addresses += [pscustomobject]@{ IPAddress='10.40.50.60'; PrefixLength=24; InterfaceAlias='Wi-Fi'; InterfaceIndex=9; AddressState='Preferred' }
-        Select-JindaLanAddress | Should Be '10.40.50.60'
+        $selected = Select-JindaLanAddress
+        $selected.IPAddress | Should Be '10.40.50.60'
+        $selected.InterfaceAlias | Should Be 'Wi-Fi'
         Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It
     }
 
     It 'uses an explicit active IPv4 address without asking' {
-        Select-JindaLanAddress -Address '10.20.30.40' | Should Be '10.20.30.40'
+        (Select-JindaLanAddress -Address '10.20.30.40').IPAddress | Should Be '10.20.30.40'
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
     }
 
