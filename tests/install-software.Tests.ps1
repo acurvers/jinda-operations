@@ -32,33 +32,48 @@ Describe 'ClamAV signature update during setup' {
         $env:ProgramW6432 = $TestDrive
         $script:clamAVPath = Join-Path $TestDrive 'ClamAV'
         New-Item -Path $script:clamAVPath -ItemType Directory -Force | Out-Null
-        foreach ($name in 'freshclam.exe', 'clamscan.exe') {
-            New-Item -Path (Join-Path $script:clamAVPath $name) -ItemType File -Force | Out-Null
+        New-Item -Path (Join-Path $script:clamAVPath 'clamscan.exe') -ItemType File -Force | Out-Null
+        $script:freshclamStub = Join-Path $script:clamAVPath 'freshclam.cmd'
+        @'
+@echo off
+echo Arguments: %*
+echo Time:   0.0s
+echo Time:   2.6s, ETA:   0.0s [========================^>] 84.95MiB/84.95MiB
+echo Database test passed.
+echo WARNING: Example FreshClam warning.
+if exist "%~dp0fail-update" (
+    echo ERROR: Example FreshClam error.
+    exit /b 52
+)
+exit /b 0
+'@ | Set-Content -LiteralPath $script:freshclamStub -Encoding Ascii
+        Mock Join-Path { $script:freshclamStub } -ParameterFilter {
+            $Path -eq $script:clamAVPath -and $ChildPath -eq 'freshclam.exe'
         }
-        $script:freshclamExit = 0
-        Mock Start-Process { [pscustomobject]@{ ExitCode = $script:freshclamExit } }
+        Mock Write-Host {}
     }
 
     AfterEach { $env:ProgramW6432 = $script:originalProgramW6432 }
 
-    It 'runs FreshClam once with the new configuration and waits for it' {
+    It 'runs FreshClam once and shows results and warnings without transfer progress rows' {
         Initialize-JindaClamAV
         $config = Join-Path $script:clamAVPath 'freshclam.conf'
         @(Get-Content -LiteralPath $config) -contains 'DatabaseMirror database.clamav.net' | Should Be $true
-        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
-            $FilePath -eq (Join-Path $script:clamAVPath 'freshclam.exe') -and
-            $ArgumentList[0] -eq ('--config-file="{0}"' -f (Join-Path $script:clamAVPath 'freshclam.conf')) -and
-            $Wait -and $PassThru
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Object -like 'Arguments:*--config-file=*freshclam.conf* --stdout'
         }
+        Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like 'Time:*' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Database test passed.' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'WARNING: Example FreshClam warning.' }
     }
 
     It 'preserves a custom configuration and reports a failing signature update' {
         $config = Join-Path $script:clamAVPath 'freshclam.conf'
         Set-Content -LiteralPath $config -Value 'PrivateMirror https://mirror.example.test'
-        $script:freshclamExit = 52
+        New-Item -Path (Join-Path $script:clamAVPath 'fail-update') -ItemType File -Force | Out-Null
         { Initialize-JindaClamAV } | Should Throw 'FreshClam failed (exit code 52)'
         Get-Content -LiteralPath $config | Should Be 'PrivateMirror https://mirror.example.test'
-        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'ERROR: Example FreshClam error.' }
     }
 }
 

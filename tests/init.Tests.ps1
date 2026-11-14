@@ -145,6 +145,15 @@ Describe 'Initialization orchestrates the two existing scripts' {
         $script:initLaunches.Count | Should Be 1
     }
 
+    It 'logs the Chrome download choice and passes it to configuration even without app installation' {
+        Mock Get-JindaSetupOptions { [pscustomobject]@{ LockChromeDownloads = $true } }
+        Invoke-JindaInitialization -LockChromeDownloads Yes | Should Be 0
+        Assert-MockCalled Get-JindaSetupOptions -Times 1 -Exactly -Scope It -ParameterFilter { $LockChromeDownloads -eq 'Yes' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Restrict Chrome downloads to the Downloads folder: Yes' }
+        $script:initLaunches.Count | Should Be 1
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -LockChromeDownloads'
+    }
+
     It 'removes Discord and records the choice even when both app groups are declined' {
         Mock Get-JindaSetupOptions {
             [pscustomobject]@{
@@ -310,6 +319,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         $PowerShellRemoting = 'No'
         $OpenSSH = 'Yes'
         $RemoveDiscord = 'Yes'
+        $LockChromeDownloads = 'No'
         $LanIPAddress = '10.20.30.40'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 1 -Exactly -Scope It
@@ -319,6 +329,7 @@ Describe 'Initialization entry point forwards the repair switch' {
             ($ScriptArguments -join ' ') -match '-InstallApps No -RemoteDesktop Yes -PowerShellRemoting No' -and
             ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
             ($ScriptArguments -join ' ') -match '-RemoveDiscord Yes' -and
+            ($ScriptArguments -join ' ') -match '-LockChromeDownloads No' -and
             ($ScriptArguments -join ' ') -match '-InstallEssentialApps Yes -InstallOptionalApps No' -and
             ($ScriptArguments -join ' ') -match '-InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes' -and
             ($ScriptArguments -join ' ') -match '-WindowsHelloStatus Settings opened' -and

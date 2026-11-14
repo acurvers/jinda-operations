@@ -75,11 +75,24 @@ Describe 'Writing browser policies (all registry writes are mocked)' {
         ($script:bookmarkRegistry['HKLM:\SOFTWARE\Policies\Microsoft\Edge'].ManagedFavorites | ConvertFrom-Json)[1].name | Should Be 'Jinda Operations'
     }
 
-    It 'does not write anything again on a second run' {
+    It 'preserves other Chrome policies and does not write bookmarks again on a second run' {
+        $script:bookmarkRegistry['HKLM:\SOFTWARE\Policies\Google\Chrome'].DownloadDirectory = '${profile}\Downloads'
         Set-JindaBrowserBookmarks
         Set-JindaBrowserBookmarks
         Assert-MockCalled New-ItemProperty -Times 2 -Exactly -Scope It
-        Assert-MockCalled New-Item -Times 2 -Exactly -Scope It
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        $script:bookmarkRegistry['HKLM:\SOFTWARE\Policies\Google\Chrome'].DownloadDirectory | Should Be '${profile}\Downloads'
+    }
+
+    It 'sets the literal per-user download directory as a mandatory Chrome machine policy' {
+        $script:bookmarkRegistry['HKLM:\SOFTWARE\Policies\Google\Chrome'].ManagedBookmarks = '[]'
+        Set-JindaChromeDownloadDirectory
+        Assert-MockCalled New-ItemProperty -Times 1 -Exactly -Scope It -ParameterFilter {
+            $LiteralPath -eq 'HKLM:\SOFTWARE\Policies\Google\Chrome' -and $Name -eq 'DownloadDirectory' -and
+            $PropertyType -eq 'String' -and $Value -ceq '${profile}\Downloads'
+        }
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        $script:bookmarkRegistry['HKLM:\SOFTWARE\Policies\Google\Chrome'].ManagedBookmarks | Should Be '[]'
     }
 
     It 'validates both policies before writing if Edge has malformed data' {

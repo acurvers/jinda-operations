@@ -50,10 +50,14 @@ hun eigen taalinstelling.
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
 | Uninstall unwanted apps? | Nee | LinkedIn en Microsoft Solitaire Collection blijven staan |
 | Uninstall Discord? (alleen als Discord is geïnstalleerd) | Nee | Discord blijft staan |
+| Restrict Chrome downloads to the Downloads folder? | Ja | Slaat de Chrome-downloadpolicy over |
 
 De Discord-keuze werkt ook als je de installatie van beide appgroepen overslaat.
 De setup controleert installaties voor het uitvoerende Windows-account en voor de hele pc.
 De projectieplayers zijn ook los van beide appgroepen te kiezen.
+Bij **Y** gebruikt Chrome de verplichte policy `DownloadDirectory` met de waarde
+`${profile}\Downloads`. Chrome vult het Windows-profiel van iedere gebruiker in.
+Kies in `chrome://policy` **Reload policies** en controleer `DownloadDirectory`.
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -69,7 +73,8 @@ de stap overslaan.
 
 Voor vooraf ingevulde keuzes kun je `-InstallEssentialApps Yes|No`, `-InstallOptionalApps Yes|No`,
 `-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No`,
-`-RemoveBundledApps Yes|No` en `-RemoveDiscord Yes|No` aan init meegeven. Het bestaande `-InstallApps Yes|No`
+`-RemoveBundledApps Yes|No`, `-RemoveDiscord Yes|No` en `-LockChromeDownloads Yes|No`
+aan init meegeven. Het bestaande `-InstallApps Yes|No`
 vult de keuze voor beide groepen in. Een expliciete keuze per groep heeft voorrang.
 Gebruik `-InstallProjectionPlayers No` om de playervragen over te slaan. Met
 `-InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes` kies je alleen Xibo

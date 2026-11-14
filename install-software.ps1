@@ -657,9 +657,14 @@ function Initialize-JindaClamAV {
     }
     Write-Host 'ClamAV: downloading or checking virus signatures...'
     $freshclam = Join-Path $directory 'freshclam.exe'
-    $update = Start-Process -FilePath $freshclam -ArgumentList ('--config-file="{0}"' -f $config) -NoNewWindow -Wait -PassThru -ErrorAction Stop
-    if ($update.ExitCode -ne 0) {
-        throw "ClamAV is installed, but FreshClam failed (exit code $($update.ExitCode)). Run '$freshclam' as administrator to retry before scanning."
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $freshclam "--config-file=$config" --stdout | ForEach-Object {
+        # FreshClam emits one carriage-return progress update per transfer callback on Windows.
+        if ($_ -notmatch '^\s*Time:\s') { Write-Host $_ }
+    }
+    $updateExitCode = $LASTEXITCODE
+    if ($updateExitCode -ne 0) {
+        throw "ClamAV is installed, but FreshClam failed (exit code $updateExitCode). Run '$freshclam' as administrator to retry before scanning."
     }
     Write-Host "ClamAV signatures are up to date. Run clamscan.exe from $directory to scan on demand."
 }

@@ -36,6 +36,8 @@ The question defaults to No and is independent of the apps choice.
 Ask (default), Yes or No. Removes LinkedIn and Microsoft Solitaire Collection. Defaults to No.
 .PARAMETER RemoveDiscord
 Ask (default), Yes or No. Offers to remove Discord if installed. The question defaults to No.
+.PARAMETER LockChromeDownloads
+Ask (default), Yes or No. Sets the mandatory Chrome Downloads folder. The question defaults to Yes.
 .PARAMETER WindowsHelloPin
 Ask (default), Yes or No. Offers to open Windows Hello setup for the signed-in desktop user.
 The question defaults to No and only appears when Windows Hello is not configured.
@@ -67,7 +69,8 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallProjectionPlayers = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
-    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask'
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask'
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -403,7 +406,7 @@ function Get-JindaSetupOptions {
         [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask', [string]$RemoveDiscord = 'Ask',
         [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask',
         [string]$InstallProjectionPlayers = 'Ask', [string]$InstallYodeck = 'Ask', [string]$InstallXibo = 'Ask',
-        [string]$InstallClamAV = 'Ask'
+        [string]$InstallClamAV = 'Ask', [string]$LockChromeDownloads = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
@@ -425,6 +428,7 @@ function Get-JindaSetupOptions {
     if ($RemoveDiscord -ne 'No' -and (Test-JindaDiscordInstalled)) {
         $uninstallDiscord = Read-JindaYesNo -Prompt 'Uninstall Discord?' -Choice $RemoveDiscord
     }
+    $lockDownloads = Read-JindaYesNo -Prompt 'Restrict Chrome downloads to the Downloads folder?' -Choice $LockChromeDownloads -Default $true
     $lan = $null
     if ($rdp -or $winrm -or $ssh) { $lan = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
@@ -434,6 +438,7 @@ function Get-JindaSetupOptions {
         RemoteDesktop = $rdp; PowerShellRemoting = $winrm
         OpenSSH = $ssh; RemoveBundledApps = $removeApps
         RemoveDiscord = $uninstallDiscord
+        LockChromeDownloads = $lockDownloads
         LanIPAddress = [string]$lan.IPAddress
         LanInterfaceAlias = $lan.InterfaceAlias
         LanPrefixLength = $lan.PrefixLength
@@ -460,7 +465,8 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallProjectionPlayers = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
-        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask'
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask'
     )
 
     $ErrorActionPreference = 'Stop'
@@ -480,6 +486,7 @@ function Invoke-JindaInitialization {
         OpenSSH = $OpenSSH
         RemoveBundledApps = $RemoveBundledApps
         RemoveDiscord = $RemoveDiscord
+        LockChromeDownloads = $LockChromeDownloads
         LanIPAddress = $LanIPAddress
     }
     $options = Get-JindaSetupOptions @choices
@@ -498,6 +505,7 @@ function Invoke-JindaInitialization {
         'Install OpenSSH' = $options.OpenSSH
         'Uninstall unwanted apps' = $options.RemoveBundledApps
         'Uninstall Discord' = $options.RemoveDiscord
+        'Restrict Chrome downloads to the Downloads folder' = $options.LockChromeDownloads
         'Repair WinGet' = ($RepairWinGet -and $wingetAppsSelected)
     }
     Write-Host ''
@@ -558,6 +566,7 @@ function Invoke-JindaInitialization {
     if ($options.RemoteDesktop) { $configArguments += '-EnableRemoteDesktop' }
     if ($options.PowerShellRemoting) { $configArguments += '-EnableWinRM' }
     if ($options.RemoveBundledApps) { $configArguments += '-RemoveBundledApps' }
+    if ($options.LockChromeDownloads) { $configArguments += '-LockChromeDownloads' }
     if ($options.RemoteDesktop -or $options.PowerShellRemoting) {
         $configArguments += @('-LanIPAddress', $options.LanIPAddress)
     }
@@ -590,6 +599,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($InstallClamAV -ne 'Ask') { $scriptArguments += @('-InstallClamAV', $InstallClamAV) }
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
         if ($RemoveDiscord -ne 'Ask') { $scriptArguments += @('-RemoveDiscord', $RemoveDiscord) }
+        if ($LockChromeDownloads -ne 'Ask') { $scriptArguments += @('-LockChromeDownloads', $LockChromeDownloads) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
@@ -609,6 +619,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 OpenSSH = $OpenSSH
                 RemoveBundledApps = $RemoveBundledApps
                 RemoveDiscord = $RemoveDiscord
+                LockChromeDownloads = $LockChromeDownloads
                 LanIPAddress = $LanIPAddress
                 SshPublicKey = $SshPublicKey
                 WindowsHelloStatus = $WindowsHelloStatus

@@ -25,6 +25,8 @@ Connect with -ConfigurationName PowerShell.7. Without this switch, WinRM setting
 Active IPv4 address on this PC; required when a remote access option is selected.
 .PARAMETER RemoveBundledApps
 Uninstall the LinkedIn and Microsoft Solitaire Collection Appx packages for all users and remove provisioning for new profiles.
+.PARAMETER LockChromeDownloads
+Require Chrome downloads to use the Downloads folder in each Windows user profile.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -35,7 +37,8 @@ param(
     [string]$LanIPAddress,
     [switch]$RemoveBundledApps,
     [Parameter(DontShow = $true)][switch]$RuntimeReady,
-    [Parameter(DontShow = $true)][switch]$WindowsLanguageWorker
+    [Parameter(DontShow = $true)][switch]$WindowsLanguageWorker,
+    [switch]$LockChromeDownloads
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -695,7 +698,9 @@ function Set-JindaBrowserBookmarks {
         }
         $current = Get-JindaBookmarkPolicyJson -Path $policy.Path -Name $policy.Name
         if ($current -cne $plan.Original) { throw "$($policy.Browser): bookmark policy changed during setup. Run again to merge the current value." }
-        $null = New-Item -Path $policy.Path -Force -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $policy.Path -ErrorAction Stop)) {
+            $null = New-Item -Path $policy.Path -Force -ErrorAction Stop
+        }
         $null = New-ItemProperty -LiteralPath $policy.Path -Name $policy.Name -PropertyType String -Value $plan.Json -Force -ErrorAction Stop
         if ((Get-JindaBookmarkPolicyJson -Path $policy.Path -Name $policy.Name) -cne $plan.Json) {
             throw "$($policy.Browser): could not verify the saved bookmark policy."
@@ -706,6 +711,26 @@ function Set-JindaBrowserBookmarks {
     Write-Host 'Edge does not apply this policy to profiles signed in with a personal Microsoft account.'
 }
 # END managed browser bookmarks.
+
+function Set-JindaChromeDownloadDirectory {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    if (-not $PSCmdlet.ShouldProcess('Chrome on this PC', 'Require the Downloads folder for downloads')) { return }
+    if (-not (Test-JindaAdministrator) -or -not [Environment]::Is64BitProcess) {
+        throw 'The Chrome download policy requires a 64-bit administrator PowerShell process.'
+    }
+    $path = 'HKLM:\SOFTWARE\Policies\Google\Chrome'
+    $directory = '${profile}\Downloads'
+    if (-not (Test-Path -LiteralPath $path -ErrorAction Stop)) {
+        $null = New-Item -Path $path -Force -ErrorAction Stop
+    }
+    $null = New-ItemProperty -LiteralPath $path -Name DownloadDirectory -PropertyType String -Value $directory -Force -ErrorAction Stop
+    if ((Get-ItemProperty -LiteralPath $path -Name DownloadDirectory -ErrorAction Stop).DownloadDirectory -cne $directory) {
+        throw 'Chrome: could not verify the saved DownloadDirectory policy.'
+    }
+    Write-Host 'Chrome: downloads are restricted to the Downloads folder for each Windows user. Check chrome://policy after reloading policies.'
+}
 
 function Set-JindaLocalPasswordAgePolicy {
     [CmdletBinding(SupportsShouldProcess = $true)]
@@ -813,7 +838,7 @@ function Invoke-JindaConfiguration {
     param(
         [string]$ScriptPath, [string]$Keyboard,
         [switch]$EnableRemoteDesktop, [switch]$EnableWinRM, [string]$LanIPAddress,
-        [switch]$RemoveBundledApps
+        [switch]$RemoveBundledApps, [switch]$LockChromeDownloads
     )
     if ($PSVersionTable.PSEdition -ne 'Desktop') {
         # Keep live WinUserLanguage objects in one native Windows PowerShell process.
@@ -823,6 +848,7 @@ function Invoke-JindaConfiguration {
         if ($EnableRemoteDesktop) { $workerArguments += '-EnableRemoteDesktop' }
         if ($EnableWinRM) { $workerArguments += '-EnableWinRM' }
         if ($RemoveBundledApps) { $workerArguments += '-RemoveBundledApps' }
+        if ($LockChromeDownloads) { $workerArguments += '-LockChromeDownloads' }
         if ($LanIPAddress) { $workerArguments += @('-LanIPAddress', $LanIPAddress) }
         return Invoke-JindaChildProcess -Executable (Get-JindaWindowsPowerShell) -ScriptPath $ScriptPath -ScriptArguments $workerArguments -NonInteractive
     }
@@ -837,6 +863,7 @@ function Invoke-JindaConfiguration {
     Set-JindaBlankPasswordPolicy
     Write-Host ''
     Set-JindaBrowserBookmarks
+    if ($LockChromeDownloads) { Set-JindaChromeDownloadDirectory }
     if ($remotePlan) {
         Write-Host ''
         Write-Host 'Configuring the selected LAN access options...'
@@ -858,9 +885,10 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($EnableRemoteDesktop) { $forwardArguments += '-EnableRemoteDesktop' }
         if ($EnableWinRM) { $forwardArguments += '-EnableWinRM' }
         if ($RemoveBundledApps) { $forwardArguments += '-RemoveBundledApps' }
+        if ($LockChromeDownloads) { $forwardArguments += '-LockChromeDownloads' }
         if ($LanIPAddress) { $forwardArguments += @('-LanIPAddress', $LanIPAddress) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $forwardArguments -RuntimeReady:$RuntimeReady -WindowsPowerShell:$WindowsLanguageWorker -WhatIf:$WhatIfPreference -Work {
-            Invoke-JindaConfiguration -ScriptPath $PSCommandPath -Keyboard $Keyboard -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM -LanIPAddress $LanIPAddress -RemoveBundledApps:$RemoveBundledApps
+            Invoke-JindaConfiguration -ScriptPath $PSCommandPath -Keyboard $Keyboard -EnableRemoteDesktop:$EnableRemoteDesktop -EnableWinRM:$EnableWinRM -LanIPAddress $LanIPAddress -RemoveBundledApps:$RemoveBundledApps -LockChromeDownloads:$LockChromeDownloads
         }
         exit $exitCode
     }
