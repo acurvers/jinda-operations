@@ -26,6 +26,42 @@ function Invoke-JindaUpdatedFakeWinget {
     Invoke-JindaFakeWinget @args
 }
 
+Describe 'ClamAV signature update during setup' {
+    BeforeEach {
+        $script:originalProgramW6432 = $env:ProgramW6432
+        $env:ProgramW6432 = $TestDrive
+        $script:clamAVPath = Join-Path $TestDrive 'ClamAV'
+        New-Item -Path $script:clamAVPath -ItemType Directory -Force | Out-Null
+        foreach ($name in 'freshclam.exe', 'clamscan.exe') {
+            New-Item -Path (Join-Path $script:clamAVPath $name) -ItemType File -Force | Out-Null
+        }
+        $script:freshclamExit = 0
+        Mock Start-Process { [pscustomobject]@{ ExitCode = $script:freshclamExit } }
+    }
+
+    AfterEach { $env:ProgramW6432 = $script:originalProgramW6432 }
+
+    It 'runs FreshClam once with the new configuration and waits for it' {
+        Initialize-JindaClamAV
+        $config = Join-Path $script:clamAVPath 'freshclam.conf'
+        @(Get-Content -LiteralPath $config) -contains 'DatabaseMirror database.clamav.net' | Should Be $true
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It -ParameterFilter {
+            $FilePath -eq (Join-Path $script:clamAVPath 'freshclam.exe') -and
+            $ArgumentList[0] -eq ('--config-file="{0}"' -f (Join-Path $script:clamAVPath 'freshclam.conf')) -and
+            $Wait -and $PassThru
+        }
+    }
+
+    It 'preserves a custom configuration and reports a failing signature update' {
+        $config = Join-Path $script:clamAVPath 'freshclam.conf'
+        Set-Content -LiteralPath $config -Value 'PrivateMirror https://mirror.example.test'
+        $script:freshclamExit = 52
+        { Initialize-JindaClamAV } | Should Throw 'FreshClam failed (exit code 52)'
+        Get-Content -LiteralPath $config | Should Be 'PrivateMirror https://mirror.example.test'
+        Assert-MockCalled Start-Process -Times 1 -Exactly -Scope It
+    }
+}
+
 Describe 'All requested Jinda applications' {
     BeforeEach {
         $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
@@ -41,6 +77,8 @@ Describe 'All requested Jinda applications' {
         $script:throwChrome = $false
         Mock Get-JindaSkippedApps { @() }
         Mock Install-JindaYodeck { $script:appOrder.Add('Yodeck'); $false }
+        Mock Install-JindaXibo { $script:appOrder.Add('Xibo'); $false }
+        Mock Initialize-JindaClamAV {}
         Mock Install-JindaOpenSSH { $false }
         Mock Install-JindaVSCodePowerShellExtension {}
         Mock Get-Command { [pscustomobject]@{ Source = 'Invoke-JindaFakeWinget' } } -ParameterFilter { $Name -eq 'winget.exe' }
@@ -54,6 +92,13 @@ Describe 'All requested Jinda applications' {
         } -ParameterFilter { $Name -eq 'Microsoft.Winget.Source' }
         Mock Add-AppxPackage { throw 'Unexpected AppX registration' }
         Mock Remove-Item {} -ParameterFilter { $LiteralPath -like '*jinda-winget-source-*.msix' }
+    }
+
+    It 'installs and configures ClamAV independently of the regular app groups' {
+        Install-JindaSoftware -SkipApps -InstallClamAV | Should Be $false
+        $script:wingetCalls.Count | Should Be 1
+        ($script:wingetCalls[0] -join ' ') | Should Match '^install --id Cisco.ClamAV --exact --source winget .*--installer-type wix --scope machine$'
+        Assert-MockCalled Initialize-JindaClamAV -Times 1 -Exactly -Scope It
     }
 
     It 'refreshes the source, accepts an already-current index and upgrades WinGet before the apps' {
@@ -74,6 +119,7 @@ Describe 'All requested Jinda applications' {
             ($call -contains $flag) | Should Be $false
         }
         $script:wingetCalls.Count | Should Be 20
+        Assert-MockCalled Initialize-JindaClamAV -Times 0 -Exactly -Scope It
         Assert-MockCalled Add-AppxPackage -Times 0 -Exactly -Scope It
     }
 
@@ -272,7 +318,7 @@ Describe 'All requested Jinda applications' {
     It 'warns about the reported Chrome source error and still attempts every remaining app' {
         $script:wingetExitCodes[0] = -1978335217
         $warnings = @()
-        Install-JindaSoftware -WarningVariable warnings | Should Be $false
+        Install-JindaSoftware -InstallYodeck -WarningVariable warnings | Should Be $false
         $script:wingetCalls.Count | Should Be 20
         ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
         ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*continue'
@@ -281,7 +327,7 @@ Describe 'All requested Jinda applications' {
 
     It 'also continues after a Chrome process exception' {
         $script:throwChrome = $true
-        Install-JindaSoftware | Should Be $false
+        Install-JindaSoftware -InstallYodeck | Should Be $false
         $script:wingetCalls.Count | Should Be 20
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
@@ -333,8 +379,8 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'skips configured apps and their related extension or direct-install steps' {
-        Mock Get-JindaSkippedApps { @('Google.Chrome', 'TeamViewer.TeamViewer', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', 'Yodeck.Player', '9NKSQGP7F2NH') }
-        Install-JindaSoftware | Should Be $false
+        Mock Get-JindaSkippedApps { @('Google.Chrome', 'TeamViewer.TeamViewer', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', 'Yodeck.Player', 'Xibo.Player', '9NKSQGP7F2NH') }
+        Install-JindaSoftware -InstallYodeck -InstallXibo | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
         $ids.Count | Should Be 15
         foreach ($id in @('Google.Chrome', 'TeamViewer.TeamViewer', 'Microsoft.VisualStudioCode', 'LastPass.LastPass', '9NKSQGP7F2NH')) {
@@ -342,6 +388,7 @@ Describe 'All requested Jinda applications' {
         }
         $ids[-1] | Should Be 'Adobe.Acrobat.Reader.64-bit'
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaXibo -Times 0 -Exactly -Scope It
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
     }
 
@@ -360,8 +407,10 @@ Describe 'All requested Jinda applications' {
 
     It 'installs the optional apps and handles the independent SSH choice' {
         Install-JindaSoftware -AppGroup Optional -EnableOpenSSH | Should Be $false
-        ($script:appOrder -join ',') | Should Be 'TeamViewer.TeamViewer,Microsoft.PowerShell,XPFFZHVGQWWLHB,Reolink.Reolink,dotPDN.PaintDotNet,Git.Git,Zoom.Zoom,VideoLAN.VLC,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'
+        ($script:appOrder -join ',') | Should Be 'TeamViewer.TeamViewer,Microsoft.PowerShell,XPFFZHVGQWWLHB,Reolink.Reolink,dotPDN.PaintDotNet,Git.Git,Zoom.Zoom,VideoLAN.VLC,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,9NKSQGP7F2NH'
         Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaXibo -Times 0 -Exactly -Scope It
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
     }
 
@@ -383,7 +432,7 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'includes all twenty active WinGet packages once, excluding Discord and Teams, and Yodeck once in the same run' {
-        Install-JindaSoftware | Should Be $false
+        Install-JindaSoftware -InstallYodeck | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
         $expected = @('Google.Chrome','TeamViewer.TeamViewer','Microsoft.PowerShell','Microsoft.VisualStudioCode',
             'XPFFZHVGQWWLHB','Notepad++.Notepad++','Reolink.Reolink','dotPDN.PaintDotNet',
@@ -425,16 +474,16 @@ Describe 'All requested Jinda applications' {
         }
     }
 
-    It 'installs WhatsApp last, after the added desktop apps and the direct Yodeck installer' {
-        Install-JindaSoftware | Should Be $false
-        ($script:appOrder | Select-Object -Last 10) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'
-        $script:appOrder.Count | Should Be 21
+    It 'installs WhatsApp last, after both explicitly selected players' {
+        Install-JindaSoftware -InstallYodeck -InstallXibo | Should Be $false
+        ($script:appOrder | Select-Object -Last 3) -join ',' | Should Be 'Yodeck,Xibo,9NKSQGP7F2NH'
+        $script:appOrder.Count | Should Be 22
     }
 
     It 'skips Store apps with sign-in errors and continues with other apps' {
         $script:wingetExitCodes[14] = -2147023584
         $script:wingetExitCodes[19] = -1978335114
-        Install-JindaSoftware -WarningVariable warnings | Should Be $false
+        Install-JindaSoftware -InstallYodeck -WarningVariable warnings | Should Be $false
         ($warnings -join ' ') | Should Match 'ChatGPT Classic:.*0x80070520'
         ($warnings -join ' ') | Should Match 'WhatsApp:.*0x8A150076'
         ($warnings -join ' ') | Should Match 'Apps skipped because a sign-in session was unavailable: ChatGPT Classic, WhatsApp\.'
@@ -465,7 +514,7 @@ Describe 'All requested Jinda applications' {
 
     It 'preserves a fatal WhatsApp error after every other app has been attempted' {
         $script:wingetExitCodes[19] = -1978335217
-        { Install-JindaSoftware } | Should Throw 'WhatsApp: WinGet failed'
+        { Install-JindaSoftware -InstallYodeck } | Should Throw 'WhatsApp: WinGet failed'
         $script:wingetCalls.Count | Should Be 20
         ($script:appOrder | Select-Object -Last 10) -join ',' | Should Be 'VideoLAN.VLC,voidtools.Everything,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,Yodeck,9NKSQGP7F2NH'
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
@@ -520,14 +569,22 @@ Describe 'All requested Jinda applications' {
 
     It 'propagates a Yodeck restart requirement' {
         Mock Install-JindaYodeck { $true }
-        Install-JindaSoftware | Should Be $true
+        Install-JindaSoftware -InstallYodeck | Should Be $true
     }
 
     It 'reports a Yodeck failure before attempting WhatsApp' {
         Mock Install-JindaYodeck { throw 'Yodeck: installation failed' }
-        { Install-JindaSoftware } | Should Throw 'Yodeck: installation failed'
+        { Install-JindaSoftware -InstallYodeck } | Should Throw 'Yodeck: installation failed'
         $script:wingetCalls.Count | Should Be 19
         (@($script:wingetCalls | ForEach-Object { $_[2] }) -contains '9NKSQGP7F2NH') | Should Be $false
+    }
+
+    It 'installs only Xibo without using WinGet or changing Yodeck' {
+        Install-JindaSoftware -SkipApps -InstallXibo | Should Be $false
+        Assert-MockCalled Install-JindaXibo -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
+        Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-Command -Times 0 -Exactly -Scope It -ParameterFilter { $Name -eq 'winget.exe' }
     }
 
 }
@@ -540,7 +597,7 @@ Describe 'Complete installation preview' {
         Mock Start-Process { throw 'Unexpected installer in WhatIf' }
         Mock New-Item { throw 'Unexpected write in WhatIf' }
         Mock Get-WindowsCapability { throw 'Unexpected capability access in WhatIf' }
-        Install-JindaSoftware -EnableOpenSSH -WhatIf | Should Be $false
+        Install-JindaSoftware -EnableOpenSSH -InstallYodeck -InstallXibo -WhatIf | Should Be $false
         Assert-MockCalled Invoke-WebRequest -Times 0 -Exactly -Scope It
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
         Assert-MockCalled New-Item -Times 0 -Exactly -Scope It

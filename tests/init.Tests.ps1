@@ -75,6 +75,32 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
     }
 
+    It 'passes only the selected player when both app groups are declined' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{
+                InstallEssentialApps = $false; InstallOptionalApps = $false
+                InstallYodeck = $false; InstallXibo = $true
+                RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false
+            }
+        }
+        Invoke-JindaInitialization -InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes -RepairWinGet | Should Be 0
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-SkipApps -InstallXibo'
+        Assert-MockCalled Repair-JindaWinGet -Times 0 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Install Xibo Player: Yes' }
+    }
+
+    It 'passes the ClamAV selection to the installer when the app groups are declined' {
+        Mock Get-JindaSetupOptions {
+            [pscustomobject]@{
+                InstallEssentialApps = $false; InstallOptionalApps = $false; InstallClamAV = $true
+                RemoteDesktop = $false; PowerShellRemoting = $false; OpenSSH = $false
+            }
+        }
+        Invoke-JindaInitialization -InstallClamAV Yes -RepairWinGet | Should Be 0
+        ($script:initLaunches[0].Arguments -join ' ') | Should Be '-SkipApps -InstallClamAV'
+        Assert-MockCalled Repair-JindaWinGet -Times 1 -Exactly -Scope It
+    }
+
     It 'repairs after validating both scripts and before starting either child script' {
         Invoke-JindaInitialization -RepairWinGet | Should Be 0
         $script:initEvents[0] | Should Be 'choices'
@@ -277,6 +303,9 @@ Describe 'Initialization entry point forwards the repair switch' {
         $InstallApps = 'No'
         $InstallEssentialApps = 'Yes'
         $InstallOptionalApps = 'No'
+        $InstallProjectionPlayers = 'Yes'
+        $InstallYodeck = 'No'
+        $InstallXibo = 'Yes'
         $RemoteDesktop = 'Yes'
         $PowerShellRemoting = 'No'
         $OpenSSH = 'Yes'
@@ -291,6 +320,7 @@ Describe 'Initialization entry point forwards the repair switch' {
             ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
             ($ScriptArguments -join ' ') -match '-RemoveDiscord Yes' -and
             ($ScriptArguments -join ' ') -match '-InstallEssentialApps Yes -InstallOptionalApps No' -and
+            ($ScriptArguments -join ' ') -match '-InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes' -and
             ($ScriptArguments -join ' ') -match '-WindowsHelloStatus Settings opened' -and
             $ScriptArguments -contains '10.20.30.40'
         }

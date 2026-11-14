@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-Install Jinda apps, Windows OpenSSH and the official Yodeck Windows installer.
+Install Jinda apps, Windows OpenSSH, selected projection players and on-demand ClamAV.
 .DESCRIPTION
 Refreshes the WinGet source and verifies its registered index before app installation.
 Updates WinGet (Microsoft App Installer) before installing any selected WinGet apps.
@@ -20,9 +20,15 @@ one active IPv4 LAN address must be available.
 .PARAMETER SshPublicKey
 Optional Ed25519 public key for the enabled local Windows accounts when OpenSSH is selected.
 .PARAMETER SkipApps
-Skip the regular apps and WinGet updates. Combine with EnableOpenSSH for SSH-only installation.
+Skip the regular apps. Explicitly selected components are still installed.
 .PARAMETER AppGroup
 Select Essential, Optional or All (default) when running this script directly.
+.PARAMETER InstallYodeck
+Install Yodeck Player independently of the regular app group.
+.PARAMETER InstallXibo
+Install Xibo Player for manual launch independently of the regular app group.
+.PARAMETER InstallClamAV
+Install ClamAV for manual scans independently of the regular app group.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
@@ -31,7 +37,10 @@ param(
     [string]$LanIPAddress,
     [string]$SshPublicKey,
     [ValidateSet('All', 'Essential', 'Optional')][string]$AppGroup = 'All',
-    [Parameter(DontShow = $true)][switch]$RuntimeReady
+    [Parameter(DontShow = $true)][switch]$RuntimeReady,
+    [switch]$InstallYodeck,
+    [switch]$InstallXibo,
+    [switch]$InstallClamAV
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -172,6 +181,15 @@ function Invoke-JindaManagedScript {
         if ($transcriptStarted) { $null = Stop-Transcript -ErrorAction SilentlyContinue }
     }
 }
+function Get-JindaWireGuardManagementAddress {
+    param([string]$LanAddress)
+
+    switch -Wildcard ($LanAddress) {
+        '192.168.50.*' { '10.6.0.3' }
+        '192.168.52.*' { '10.6.0.2' }
+    }
+}
+
 # END shared runtime.
 
 function Get-JindaVSCodeCliPath {
@@ -203,7 +221,13 @@ function Install-JindaVSCodePowerShellExtension {
     & $cli --install-extension $extensionId --force | Out-Host
     $installExitCode = $LASTEXITCODE
     if ($installExitCode -ne 0) {
-        throw "VS Code: PowerShell extension installation failed (exit code $installExitCode)."
+        Write-Warning "VS Code: the first PowerShell extension installation returned exit code $installExitCode. Retrying once with trace logging."
+        Start-Sleep -Seconds 5
+        & $cli --install-extension $extensionId --force --log trace | Out-Host
+        $installExitCode = $LASTEXITCODE
+        if ($installExitCode -ne 0) {
+            throw "VS Code: PowerShell extension installation failed (exit code $installExitCode) after retry. See the VS Code trace output above."
+        }
     }
     $installed = @(& $cli --list-extensions)
     $verifyExitCode = $LASTEXITCODE
@@ -270,6 +294,80 @@ function Install-JindaYodeck {
     }
 }
 
+function Test-JindaXiboInstalled {
+    $uninstallPaths = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    )
+    foreach ($entry in (Get-ItemProperty -Path $uninstallPaths -ErrorAction SilentlyContinue)) {
+        if ($entry.PSObject.Properties['DisplayName'] -and $entry.DisplayName -eq 'Xibo Player') {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Remove-JindaXiboStartupShortcut {
+    $startupFolders = @([Environment]::GetFolderPath('CommonStartup'), [Environment]::GetFolderPath('Startup'))
+    foreach ($folder in ($startupFolders | Where-Object { $_ } | Select-Object -Unique)) {
+        $shortcut = Join-Path $folder 'Xibo Player.lnk'
+        if (Test-Path -LiteralPath $shortcut -PathType Leaf) {
+            $shell = New-Object -ComObject WScript.Shell
+            $target = $shell.CreateShortcut($shortcut).TargetPath
+            if ([IO.Path]::GetFileName($target) -eq 'XiboClient.exe') {
+                Remove-Item -LiteralPath $shortcut -ErrorAction Stop
+            }
+        }
+    }
+}
+
+function Install-JindaXibo {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param()
+
+    $ErrorActionPreference = 'Stop'
+    Write-Host ''
+    if (-not $PSCmdlet.ShouldProcess('Xibo Player', 'Install for manual launch')) { return $false }
+    if (Test-JindaXiboInstalled) {
+        Remove-JindaXiboStartupShortcut
+        Write-Host 'Xibo Player is already installed. Open Xibo Player Options from Start.'
+        return $false
+    }
+
+    # This release's MSI includes a Startup shortcut. Review that behavior when updating the pin.
+    $uri = 'https://github.com/xibosignage/xibo-dotnetclient/releases/download/4R407/xibo-client-v4-R407.2-win32-x86.msi'
+    $hash = '7FC25C91572037E4AF51DDA8F0AD6D545CE2CB6CD38DF2923657FD8DD5DA7A9B'
+    $installer = Join-Path $env:TEMP ('jinda-xibo-' + [guid]::NewGuid().ToString('N') + '.msi')
+    $log = [IO.Path]::ChangeExtension($installer, '.log')
+    try {
+        Write-Host 'Downloading the official Xibo for Windows installer...'
+        Invoke-WebRequest -UseBasicParsing -Uri $uri -OutFile $installer -TimeoutSec 180 -ErrorAction Stop
+        if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $hash) {
+            throw 'Xibo: installer SHA-256 does not match the selected release.'
+        }
+        $signature = Get-AuthenticodeSignature -FilePath $installer
+        if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
+            $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)CN=Xibo Signage Ltd(?:,|$)') {
+            throw 'Xibo: the installer has no valid signature from Xibo Signage Ltd.'
+        }
+        $msiArguments = @('/i', ('"{0}"' -f $installer), '/qn', '/norestart', 'ALLUSERS=1', 'RUNAPPLICATION=0', '/L*v', ('"{0}"' -f $log))
+        $process = Start-Process -FilePath (Join-Path $env:WINDIR 'System32\msiexec.exe') -ArgumentList $msiArguments -WindowStyle Hidden -Wait -PassThru
+        if ($process.ExitCode -notin @(0, 3010)) {
+            throw "Xibo: installation failed (exit code $($process.ExitCode)). MSI log: $log"
+        }
+        if (-not (Test-JindaXiboInstalled)) {
+            throw "Xibo: Windows did not register the installation. MSI log: $log"
+        }
+        Remove-JindaXiboStartupShortcut
+        Write-Host 'Xibo Player is installed. Open Xibo Player Options from Start to connect it to your CMS.'
+        return ($process.ExitCode -eq 3010)
+    }
+    finally {
+        if (Test-Path -LiteralPath $installer) { Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Get-JindaOpenSSHLan {
     param([string]$Address)
 
@@ -290,12 +388,14 @@ function Get-JindaOpenSSHLan {
         $network[$index] = $network[$index] -band $mask[$index]
     }
     $networkAddress = $network -join '.'
+    $subnet = "$networkAddress/$($lan.PrefixLength)"
     [pscustomobject]@{
         Address = $lan.IPAddress
         InterfaceAlias = $lan.InterfaceAlias
         InterfacePattern = [System.Management.Automation.WildcardPattern]::Escape($lan.InterfaceAlias)
-        Subnet = "$networkAddress/$($lan.PrefixLength)"
+        Subnet = $subnet
         SubnetWithMask = "$networkAddress/$($mask -join '.')"
+        RemoteAddresses = @($subnet; Get-JindaWireGuardManagementAddress -LanAddress $lan.IPAddress)
     }
 }
 
@@ -332,18 +432,23 @@ function Test-JindaOpenSSHSetup {
     $addressFilter = Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
     $portFilter = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
     $interfaceFilter = Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop
+    $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object {
+        if ($_ -eq $Lan.SubnetWithMask) { $Lan.Subnet }
+        else { $_ -replace '/(?:32|255\.255\.255\.255)$', '' }
+    })
     if ([string]$rule.Enabled -ne 'True' -or [string]$rule.Profile -ne 'Any' -or
         $rule.Direction -ne 'Inbound' -or $rule.Action -ne 'Allow' -or $rule.EdgeTraversalPolicy -ne 'Block' -or
         [string]$portFilter.Protocol -notin @('TCP', '6') -or [string]$portFilter.LocalPort -ne '22' -or
         [string]$addressFilter.LocalAddress -notin @($Lan.Address, "$($Lan.Address)/32", "$($Lan.Address)/255.255.255.255") -or
-        [string]$addressFilter.RemoteAddress -notin @($Lan.Subnet, $Lan.SubnetWithMask) -or
+        $remoteAddresses.Count -ne $Lan.RemoteAddresses.Count -or
+        (Compare-Object -ReferenceObject $Lan.RemoteAddresses -DifferenceObject $remoteAddresses) -or
         [string]$interfaceFilter.InterfaceAlias -notin @($Lan.InterfaceAlias, $Lan.InterfacePattern)) {
         throw "Active OpenSSH firewall rule $RuleName does not match the selected LAN and TCP port 22."
     }
     if ($rule.PrimaryStatus -ne 'OK' -or @($rule.EnforcementStatus) -notcontains 'Enforced') {
         throw "OpenSSH firewall rule $RuleName is configured but not enforced: $($rule.EnforcementStatus -join ', ')."
     }
-    Write-Host "SUCCESS: the SSH firewall rule is enforced on $($Lan.InterfaceAlias) for $($Lan.Address) from $($Lan.Subnet)."
+    Write-Host "SUCCESS: the SSH firewall rule is enforced on $($Lan.InterfaceAlias) for $($Lan.Address) from $($Lan.RemoteAddresses -join ', ')."
 }
 
 function ConvertTo-JindaEd25519PublicKey {
@@ -470,7 +575,7 @@ function Install-JindaOpenSSH {
 
     # Use Microsoft's in-box features, serviced by Windows Update, not a preview MSI.
     # https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse
-    if (-not $PSCmdlet.ShouldProcess('Windows OpenSSH client and server', 'Install and enable SSH on the selected LAN (TCP 22)')) { return $false }
+    if (-not $PSCmdlet.ShouldProcess('Windows OpenSSH client and server', 'Install and enable SSH for the selected LAN and its WireGuard management address (TCP 22)')) { return $false }
     $ErrorActionPreference = 'Stop'
     $lan = Get-JindaOpenSSHLan -Address $LanIPAddress
     $restartNeeded = $false
@@ -503,7 +608,7 @@ function Install-JindaOpenSSH {
         Enabled = 'True'; Direction = 'Inbound'; Action = 'Allow'
         Protocol = 'TCP'; LocalPort = 22
         Profile = 'Any'; EdgeTraversalPolicy = 'Block'
-        LocalAddress = $lan.Address; RemoteAddress = $lan.Subnet
+        LocalAddress = $lan.Address; RemoteAddress = $lan.RemoteAddresses
         InterfaceAlias = $lan.InterfacePattern
     }
     if ($rule) {
@@ -526,6 +631,37 @@ function Install-JindaOpenSSH {
     Write-Host 'OpenSSH is installed and sshd is configured to start with Windows.'
     Write-Host 'Use an existing Windows account and its password or configured SSH key.'
     return $false
+}
+
+function Initialize-JindaClamAV {
+    $directory = foreach ($programFiles in @($env:ProgramW6432, $env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if (-not $programFiles) { continue }
+        $candidate = Join-Path $programFiles 'ClamAV'
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'clamscan.exe') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'freshclam.exe') -PathType Leaf)) {
+            $candidate
+            break
+        }
+    }
+    if (-not $directory) { throw 'ClamAV: clamscan.exe and freshclam.exe were not found in Program Files.' }
+
+    $config = Join-Path $directory 'freshclam.conf'
+    if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
+        $database = Join-Path $directory 'database'
+        New-Item -ItemType Directory -Path $database -Force | Out-Null
+        $lines = @(
+            ('DatabaseDirectory "{0}"' -f $database)
+            'DatabaseMirror database.clamav.net'
+        )
+        [IO.File]::WriteAllLines($config, $lines, [Text.UTF8Encoding]::new($false))
+    }
+    Write-Host 'ClamAV: downloading or checking virus signatures...'
+    $freshclam = Join-Path $directory 'freshclam.exe'
+    $update = Start-Process -FilePath $freshclam -ArgumentList ('--config-file="{0}"' -f $config) -NoNewWindow -Wait -PassThru -ErrorAction Stop
+    if ($update.ExitCode -ne 0) {
+        throw "ClamAV is installed, but FreshClam failed (exit code $($update.ExitCode)). Run '$freshclam' as administrator to retry before scanning."
+    }
+    Write-Host "ClamAV signatures are up to date. Run clamscan.exe from $directory to scan on demand."
 }
 
 function Get-JindaSoftwarePackages {
@@ -556,8 +692,10 @@ function Get-JindaSoftwarePackages {
         @{ Id = 'OpenWhisperSystems.Signal'; Name = 'Signal'; Source = 'winget'; Scope = 'user'; Extra = @() }
         @{ Id = 'OBSProject.OBSStudio'; Name = 'OBS Studio'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Adobe.Acrobat.Reader.64-bit'; Name = 'Adobe Acrobat Reader'; Source = 'winget'; Scope = 'machine'; Extra = @() }
-        # Yodeck uses its signed official installer; WhatsApp must be the final app.
+        @{ Id = 'Cisco.ClamAV'; Name = 'ClamAV'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
+        # Projection players are explicit opt-ins; WhatsApp must be the final app.
         @{ Id = 'Yodeck.Player'; Name = 'Yodeck Player'; Source = 'yodeck' }
+        @{ Id = 'Xibo.Player'; Name = 'Xibo Player'; Source = 'xibo' }
         @{ Id = '9NKSQGP7F2NH'; Name = 'WhatsApp'; Source = 'msstore'; Scope = ''; Extra = @() }
     )
 }
@@ -654,7 +792,8 @@ function Install-JindaSoftware {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
         [switch]$EnableOpenSSH, [switch]$SkipApps, [string]$LanIPAddress, [string]$SshPublicKey,
-        [ValidateSet('All', 'Essential', 'Optional')][string]$AppGroup = 'All'
+        [ValidateSet('All', 'Essential', 'Optional')][string]$AppGroup = 'All',
+        [switch]$InstallYodeck, [switch]$InstallXibo, [switch]$InstallClamAV
     )
 
     Set-StrictMode -Version Latest
@@ -674,6 +813,12 @@ function Install-JindaSoftware {
                 Write-Host 'OpenSSH was not selected; existing installation and settings are unchanged.'
                 continue
             }
+        } elseif ($package.Id -eq 'Yodeck.Player') {
+            if (-not $InstallYodeck) { continue }
+        } elseif ($package.Id -eq 'Xibo.Player') {
+            if (-not $InstallXibo) { continue }
+        } elseif ($package.Id -eq 'Cisco.ClamAV') {
+            if (-not $InstallClamAV) { continue }
         } elseif ($SkipApps -or ($AppGroup -eq 'Essential' -and -not $package['Essential']) -or
             ($AppGroup -eq 'Optional' -and $package['Essential'])) {
             continue
@@ -686,7 +831,7 @@ function Install-JindaSoftware {
         }
     })
     if ($packages.Count -eq 0) {
-        Write-Host 'No software components selected. No app, OpenSSH or WinGet changes will run.'
+        Write-Host 'No software components selected.'
         return $false
     }
     $needsWinGet = @($packages | Where-Object { $_.Source -in @('winget', 'msstore') }).Count -gt 0
@@ -736,6 +881,10 @@ function Install-JindaSoftware {
             if (Install-JindaYodeck -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
             continue
         }
+        if ($package.Source -eq 'xibo') {
+            if (Install-JindaXibo -WhatIf:$WhatIfPreference) { $restartNeeded = $true }
+            continue
+        }
         Write-Host ''
         if ($package['RequiresInteractiveSession'] -and (Get-Process -Id $PID).SessionId -eq 0) {
             $appsSkippedForSignIn += $package.Name
@@ -771,6 +920,9 @@ function Install-JindaSoftware {
             if ($package.Id -eq 'Microsoft.VisualStudioCode') {
                 Install-JindaVSCodePowerShellExtension
             }
+            if ($package.Id -eq 'Cisco.ClamAV') {
+                Initialize-JindaClamAV
+            }
         }
         catch {
             if ($package.Id -ne 'Google.Chrome') { throw }
@@ -795,10 +947,13 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($EnableOpenSSH) { $scriptArguments += '-EnableOpenSSH' }
         if ($SkipApps) { $scriptArguments += '-SkipApps' }
         if ($AppGroup -ne 'All') { $scriptArguments += @('-AppGroup', $AppGroup) }
+        if ($InstallYodeck) { $scriptArguments += '-InstallYodeck' }
+        if ($InstallXibo) { $scriptArguments += '-InstallXibo' }
+        if ($InstallClamAV) { $scriptArguments += '-InstallClamAV' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
         $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $scriptArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -AppGroup $AppGroup -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey) { return 3010 }
+            if (Install-JindaSoftware -EnableOpenSSH:$EnableOpenSSH -SkipApps:$SkipApps -AppGroup $AppGroup -LanIPAddress $LanIPAddress -SshPublicKey $SshPublicKey -InstallYodeck:$InstallYodeck -InstallXibo:$InstallXibo -InstallClamAV:$InstallClamAV) { return 3010 }
             return 0
         }
         exit $exitCode

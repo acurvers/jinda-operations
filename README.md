@@ -41,6 +41,10 @@ hun eigen taalinstelling.
 | Set up a Windows Hello PIN for this Windows account? | Nee | Slaat Windows Hello over |
 | Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de vijf essentiële apps over |
 | Install optional apps? | Nee | Slaat de overige apps over |
+| Install projection players? | Nee | Slaat de twee playervragen over |
+| Install Yodeck Player? | Nee | Verschijnt na Yes bij projectieplayers |
+| Install Xibo Player? | Nee | Verschijnt na Yes bij projectieplayers |
+| Install ClamAV for on-demand scans? | Nee | Slaat ClamAV over |
 | Enable Remote Desktop (RDP) on the LAN? | Nee | Bestaande RDP-instellingen blijven ongemoeid |
 | Enable PowerShell remoting (WinRM) on the LAN? | Nee | Bestaande WinRM-instellingen blijven ongemoeid |
 | Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? | Nee | OpenSSH-installatie, service, firewall en sleutels blijven ongemoeid |
@@ -49,6 +53,7 @@ hun eigen taalinstelling.
 
 De Discord-keuze werkt ook als je de installatie van beide appgroepen overslaat.
 De setup controleert installaties voor het uitvoerende Windows-account en voor de hele pc.
+De projectieplayers zijn ook los van beide appgroepen te kiezen.
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.
@@ -66,6 +71,9 @@ Voor vooraf ingevulde keuzes kun je `-InstallEssentialApps Yes|No`, `-InstallOpt
 `-RemoteDesktop Yes|No`, `-PowerShellRemoting Yes|No`, `-OpenSSH Yes|No`,
 `-RemoveBundledApps Yes|No` en `-RemoveDiscord Yes|No` aan init meegeven. Het bestaande `-InstallApps Yes|No`
 vult de keuze voor beide groepen in. Een expliciete keuze per groep heeft voorrang.
+Gebruik `-InstallProjectionPlayers No` om de playervragen over te slaan. Met
+`-InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes` kies je alleen Xibo
+uit de projectieplayers.
 Gebruik bij meerdere
 netwerkadressen een expliciet `-LanIPAddress` om ook de LAN-keuze vooraf in te vullen.
 
@@ -217,7 +225,7 @@ die app over te slaan. Bijvoorbeeld:
 Standaard slaat het bestand niets over. Een overgeslagen app wordt niet verwijderd;
 bij VS Code wordt ook de bijbehorende PowerShell-extensie overgeslagen.
 Teams blijft tijdelijk uitgeschakeld in het script.
-Yodeck heeft de vaste sleutel `Yodeck.Player`. Lege regels en tekst na `#` worden
+De sleutels voor de projectieplayers zijn `Yodeck.Player` en `Xibo.Player`. Lege regels en tekst na `#` worden
 genegeerd; hoofdletters maken niet uit. Een onbekende ID of ontbrekend bestand
 stopt de installatie met een foutmelding voordat WinGet iets bijwerkt.
 
@@ -246,8 +254,9 @@ er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het scr
 voordat de apps beginnen. Kies je aan het begin geen app-installatie, dan wordt
 ook deze WinGet-update overgeslagen.
 
-VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel. De overige
-apps vallen onder de optionele keuze. `skip-apps.conf` geldt voor beide groepen.
+VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel. Yodeck, Xibo en
+ClamAV hebben eigen keuzes. De overige apps vallen onder de optionele keuze. `skip-apps.conf`
+geldt voor alle groepen.
 
 | App | Pakket / bron | Installatiebereik |
 | --- | --- | --- |
@@ -273,9 +282,27 @@ apps vallen onder de optionele keuze. `skip-apps.conf` geldt voor beide groepen.
 | OBS Studio | OBSProject.OBSStudio / winget, nullsoft | Alle gebruikers |
 | Adobe Acrobat Reader (64-bit) | Adobe.Acrobat.Reader.64-bit / winget | Alle gebruikers |
 | Yodeck Player | Officiele Yodeck Windows-installer | Alle gebruikers |
+| Xibo Player | Officiele Xibo Windows-installer | Alle gebruikers |
+| ClamAV | Cisco.ClamAV / winget | Alle gebruikers, voor handmatige scans |
 | WhatsApp | 9NKSQGP7F2NH / msstore | Standaard van Store |
 
-WhatsApp wordt als laatste app geprobeerd, na Yodeck. Dezelfde afhandeling voor Store-aanmeldfouten geldt voor WhatsApp.
+WhatsApp wordt als laatste app geprobeerd. Dezelfde afhandeling voor Store-aanmeldfouten geldt voor WhatsApp.
+
+### ClamAV op verzoek
+
+De setup installeert ClamAV, maakt zo nodig `freshclam.conf` aan en laat
+`freshclam.exe` eenmalig de virusdefinities ophalen of controleren. Windows Defender
+blijft actief. ClamAV heeft vanuit deze setup geen service of geplande taak.
+Voer vóór een latere scan in PowerShell als administrator opnieuw `freshclam.exe` uit.
+Bijvoorbeeld op een 64-bits installatie:
+
+```powershell
+& "$env:ProgramFiles\ClamAV\freshclam.exe"
+& "$env:ProgramFiles\ClamAV\clamscan.exe" --recursive --infected "$env:USERPROFILE\Downloads"
+```
+
+`clamscan.exe` stopt zodra de scan klaar is. Dit commando rapporteert detecties en
+scanfouten en verwijdert geen bestanden.
 
 OpenSSH wordt via de ingebouwde Windows-onderdelen geinstalleerd, met
 `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0` en
@@ -283,7 +310,9 @@ hetzelfde commando voor `OpenSSH.Server~~~~0.0.1.0`. Reeds aanwezige onderdelen
 worden overgeslagen; verdere updates lopen via Windows Update. De service `sshd`
 wordt gestart en op automatisch starten gezet. De standaardfirewallregel
 `OpenSSH-Server-In-TCP` staat TCP 22 toe op de gekozen adapter en het
-bijbehorende lokale IPv4-adres, met het gekozen IPv4-subnet als bron. De
+bijbehorende lokale IPv4-adres. Toegang is beperkt tot het gekozen IPv4-subnet
+en op de salon-LAN's tot het WireGuard-adres van de beheer-pc
+(`10.6.0.2` in Heesch, `10.6.0.3` in Oss). De
 regel geldt op alle netwerkprofielen, waaronder Public. Het netwerkprofiel
 van de adapter blijft zoals Windows het heeft ingesteld.
 
@@ -336,9 +365,11 @@ Dezelfde TeamViewer-installatie staat maar eenmaal in de lijst.
 
 Direct na VS Code installeert of actualiseert het script de officiele Microsoft
 PowerShell-extensie (`ms-vscode.PowerShell`) zonder extra vragen. Dit gebeurt ook
-als VS Code zelf al actueel is. Het script controleert daarna of de extensie is
-geinstalleerd en stopt bij een fout. De extensie geldt voor het uitvoerende
-Windows-account; bij UAC met een ander administratoraccount geldt dit voor dat account.
+als VS Code zelf al actueel is. Bij een mislukte installatie probeert het script
+het eenmaal opnieuw met uitgebreide VS Code-loguitvoer. Daarna controleert het
+of de extensie is geinstalleerd. Een blijvende fout stopt de setup. De extensie
+geldt voor het uitvoerende Windows-account. Bij UAC met een ander
+administratoraccount geldt dit voor dat account.
 
 De opgegeven oude ID's Microsoft.OneNote, LogMeIn.LastPass en WhatsApp.WhatsApp
 zijn vervangen door bovenstaande actuele vermeldingen. OneNote gebruikt de
@@ -357,6 +388,12 @@ Na installatie controleert het script de Windows-programmaregistratie.
 
 Open Yodeck daarna en koppel de registratiecode zelf aan je account:
 [Yodeck-handleiding](https://www.yodeck.com/docs/user-manual/setting-up-the-windows-player-with-the-yodeck-software/).
+
+Xibo wordt stil geïnstalleerd met de officiële MSI, na controle van de SHA-256 en de
+handtekening van Xibo Signage Ltd. De setup verwijdert de Xibo-snelkoppeling uit Opstarten.
+Open **Xibo Player Options** via Start om de player aan je Xibo CMS te koppelen.
+Voer voor uitsluitend Xibo `.\install-software.ps1 -SkipApps -InstallXibo` uit vanuit PowerShell.
+
 Accounts worden niet automatisch gekoppeld. Er wordt geen remote
 TeamViewer-sessie gestart.
 
@@ -394,10 +431,10 @@ niet aangepast.
 - RDP: NLA aan, bestaande RDP-poort behouden, TCP en UDP; TermService wordt niet herstart.
 - WinRM: PowerShell 7-remoting via `PowerShell.7` op HTTP/TCP 5985, Windows-authenticatie;
   Basic en onversleutelde berichten blijven uit.
-- Windows-standaardregels voor de gekozen onderdelen staan het werkelijke
-  LAN-subnet en WireGuard-client `10.6.0.3` toe. Het gekozen lokale IPv4-adres
-  en de LAN-interface blijven de bestemming. Dit geldt voor RDP (TCP/UDP)
-  en de WinRM-regels, ook nadat Windows remoting opnieuw configureert.
+- De RDP-regels (TCP/UDP) en WinRM-regels staan het LAN-subnet en het WireGuard-adres
+  van de beheer-pc toe (`10.6.0.2` op `192.168.52.x` in Heesch, elders `10.6.0.3`).
+  De regels blijven gebonden aan de gekozen LAN-interface en het lokale
+  IPv4-adres, ook nadat Windows remoting opnieuw configureert.
 - Zodra RDP of WinRM wordt gekozen, staat de eigen regel
   `Jinda-LAN-WireGuard-ICMPv4-In` ook IPv4-pings (ICMP echo request, type 8)
   toe vanaf hetzelfde LAN-subnet en `10.6.0.3`. Er komen geen extra vragen.

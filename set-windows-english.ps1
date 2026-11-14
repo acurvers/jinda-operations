@@ -8,7 +8,7 @@ sign-in screen, system accounts, new users and the current user.
 Requests administrator privileges and selects the latest installed stable PowerShell 7+.
 Windows configuration runs internally in Windows PowerShell 5.1. Restart afterwards.
 RDP and WinRM are enabled only when their individual switches are specified.
-Selected remote access and IPv4 ping allow the LAN and WireGuard client 10.6.0.3.
+Selected remote access and IPv4 ping allow the LAN and a WireGuard management address.
 These address restrictions are retained when the script is run again.
 Adds Jinda Operations as a managed bookmark in Chrome and Edge for all Windows users.
 Personal bookmarks are unchanged; Edge excludes profiles signed in with a personal Microsoft account.
@@ -176,6 +176,15 @@ function Invoke-JindaManagedScript {
         if ($transcriptStarted) { $null = Stop-Transcript -ErrorAction SilentlyContinue }
     }
 }
+function Get-JindaWireGuardManagementAddress {
+    param([string]$LanAddress)
+
+    switch -Wildcard ($LanAddress) {
+        '192.168.50.*' { '10.6.0.3' }
+        '192.168.52.*' { '10.6.0.2' }
+    }
+}
+
 # END shared runtime.
 
 # BEGIN LAN remote access adapted from strato-kor-ansible/tools/windows-lan-remote-access/Enable-LanRemoteAccess.ps1.
@@ -337,12 +346,15 @@ function Get-LanRemoteAccessPlan {
         throw 'One of the required firewall rules is centrally managed. Nothing will be changed.'
     }
 
+    $managementAddress = Get-JindaWireGuardManagementAddress -LanAddress $Address.IPAddressToString
+    if (-not $managementAddress) { $managementAddress = '10.6.0.3' }
     [pscustomobject]@{
         Computer = $env:COMPUTERNAME
         Address = $Address.IPAddressToString
         InterfaceAlias = [string]$lan.InterfaceAlias
         Subnet = $subnet
-        RemoteAddresses = @($subnet, '10.6.0.3')
+        RemoteAddresses = @($subnet, $managementAddress)
+        PingRemoteAddresses = @($subnet, '10.6.0.3')
         PingRuleName = $pingRuleName
         NetworkProfile = $category
         WinRMPort = 5985
@@ -378,7 +390,7 @@ function Set-LanRemoteAccessPingRule {
         Protocol = 'ICMPv4'
         IcmpType = '8'
         LocalAddress = $Plan.Address
-        RemoteAddress = $Plan.RemoteAddresses
+        RemoteAddress = $Plan.PingRemoteAddresses
         InterfaceAlias = [System.Management.Automation.WildcardPattern]::Escape($Plan.InterfaceAlias)
         EdgeTraversalPolicy = 'Block'
         ErrorAction = 'Stop'
@@ -395,7 +407,7 @@ function Invoke-LanRemoteAccessSetup {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([Parameter(Mandatory)]$Plan)
     $ErrorActionPreference = 'Stop'
-    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Enable selected remote access and IPv4 ping for this LAN and WireGuard 10.6.0.3')) { return }
+    if (-not $PSCmdlet.ShouldProcess($Plan.Address, 'Enable selected remote access and IPv4 ping for the configured source addresses')) { return }
     Assert-LanRemoteAccessAdministrator
     # Scope the rules before enabling, and again afterwards because Microsoft's
     # remoting setup may update standard firewall rules itself.
@@ -469,7 +481,8 @@ function Invoke-LanRemoteAccessSetup {
         Where-Object { $_.LocalPort -in $ports } |
         Select-Object LocalAddress, LocalPort, State
     Write-Host 'Settings applied. Test connectivity and sign-in from the other PC.'
-    Write-Host ("Allowed source addresses for selected remote access and IPv4 pings: {0}." -f ($Plan.RemoteAddresses -join ', '))
+    Write-Host ("Allowed source addresses for selected RDP and WinRM: {0}." -f ($Plan.RemoteAddresses -join ', '))
+    Write-Host ("Allowed source addresses for IPv4 ping: {0}." -f ($Plan.PingRemoteAddresses -join ', '))
     Write-Host 'This script does not configure WinRM client authentication (such as TrustedHosts/HTTPS).'
     if ($Plan.EnableWinRM) {
         Write-Host "For PowerShell 7, connect with: Enter-PSSession -ComputerName $($Plan.Address) -ConfigurationName PowerShell.7 -Authentication Negotiate -Credential (Get-Credential)"
@@ -827,7 +840,7 @@ function Invoke-JindaConfiguration {
     if ($remotePlan) {
         Write-Host ''
         Write-Host 'Configuring the selected LAN access options...'
-        $remotePlan | Select-Object Address, RemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
+        $remotePlan | Select-Object Address, RemoteAddresses, PingRemoteAddresses, InterfaceAlias, EnableRemoteDesktop, EnableWinRM | Format-List | Out-Host
         Invoke-LanRemoteAccessSetup -Plan $remotePlan | Out-Host
     }
     $restartNeeded = $RemoveBundledApps -and (Uninstall-JindaBundledApps)

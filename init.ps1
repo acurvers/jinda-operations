@@ -17,6 +17,14 @@ Legacy choice for both app groups. Yes or No fills in any group whose choice is 
 Ask (default), Yes or No. The question defaults to Yes.
 .PARAMETER InstallOptionalApps
 Ask (default), Yes or No. The question defaults to No.
+.PARAMETER InstallProjectionPlayers
+Ask (default), Yes or No. Enables the separate Yodeck and Xibo choices.
+.PARAMETER InstallYodeck
+Ask (default), Yes or No. The question defaults to No.
+.PARAMETER InstallXibo
+Ask (default), Yes or No. The question defaults to No.
+.PARAMETER InstallClamAV
+Ask (default), Yes or No. Installs ClamAV for manual scans. The question defaults to No.
 .PARAMETER RemoteDesktop
 Ask (default), Yes or No. Enables Remote Desktop for the selected LAN and WireGuard client.
 .PARAMETER PowerShellRemoting
@@ -55,7 +63,11 @@ param(
     [ValidateSet('Not checked', 'Skipped', 'No desktop session', 'Already available', 'Unavailable', 'Settings opened', 'Error')]
     [string]$WindowsHelloStatus = 'Not checked',
     [Parameter(DontShow = $true)][switch]$RuntimeReady,
-    [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveDiscord = 'Ask'
+    [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveDiscord = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallProjectionPlayers = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask'
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -196,6 +208,15 @@ function Invoke-JindaManagedScript {
         if ($transcriptStarted) { $null = Stop-Transcript -ErrorAction SilentlyContinue }
     }
 }
+function Get-JindaWireGuardManagementAddress {
+    param([string]$LanAddress)
+
+    switch -Wildcard ($LanAddress) {
+        '192.168.50.*' { '10.6.0.3' }
+        '192.168.52.*' { '10.6.0.2' }
+    }
+}
+
 # END shared runtime.
 
 function Repair-JindaWinGet {
@@ -380,13 +401,22 @@ function Get-JindaSetupOptions {
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
         [string]$PowerShellRemoting = 'Ask', [string]$OpenSSH = 'Ask',
         [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask', [string]$RemoveDiscord = 'Ask',
-        [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask'
+        [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask',
+        [string]$InstallProjectionPlayers = 'Ask', [string]$InstallYodeck = 'Ask', [string]$InstallXibo = 'Ask',
+        [string]$InstallClamAV = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
     if ($InstallOptionalApps -eq 'Ask') { $InstallOptionalApps = $InstallApps }
     $essential = Read-JindaYesNo -Prompt 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)?' -Choice $InstallEssentialApps -Default $true
     $optional = Read-JindaYesNo -Prompt 'Install optional apps?' -Choice $InstallOptionalApps
+    $yodeck = $false
+    $xibo = $false
+    if (Read-JindaYesNo -Prompt 'Install projection players?' -Choice $InstallProjectionPlayers) {
+        $yodeck = Read-JindaYesNo -Prompt 'Install Yodeck Player?' -Choice $InstallYodeck
+        $xibo = Read-JindaYesNo -Prompt 'Install Xibo Player?' -Choice $InstallXibo
+    }
+    $clamAV = Read-JindaYesNo -Prompt 'Install ClamAV for on-demand scans?' -Choice $InstallClamAV
     $rdp = Read-JindaYesNo -Prompt 'Enable Remote Desktop (RDP) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $RemoteDesktop
     $winrm = Read-JindaYesNo -Prompt 'Enable PowerShell remoting (WinRM) on the LAN? (N = skip; leave existing settings unchanged)' -Choice $PowerShellRemoting
     $ssh = Read-JindaYesNo -Prompt 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip)' -Choice $OpenSSH
@@ -399,6 +429,8 @@ function Get-JindaSetupOptions {
     if ($rdp -or $winrm -or $ssh) { $lan = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
         InstallEssentialApps = $essential; InstallOptionalApps = $optional
+        InstallYodeck = $yodeck; InstallXibo = $xibo
+        InstallClamAV = $clamAV
         RemoteDesktop = $rdp; PowerShellRemoting = $winrm
         OpenSSH = $ssh; RemoveBundledApps = $removeApps
         RemoveDiscord = $uninstallDiscord
@@ -424,7 +456,11 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$RemoveDiscord = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallEssentialApps = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallOptionalApps = 'Ask',
-        [string]$WindowsHelloStatus = 'Not checked'
+        [string]$WindowsHelloStatus = 'Not checked',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallProjectionPlayers = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask'
     )
 
     $ErrorActionPreference = 'Stop'
@@ -435,6 +471,10 @@ function Invoke-JindaInitialization {
         InstallApps = $InstallApps
         InstallEssentialApps = $InstallEssentialApps
         InstallOptionalApps = $InstallOptionalApps
+        InstallProjectionPlayers = $InstallProjectionPlayers
+        InstallYodeck = $InstallYodeck
+        InstallXibo = $InstallXibo
+        InstallClamAV = $InstallClamAV
         RemoteDesktop = $RemoteDesktop
         PowerShellRemoting = $PowerShellRemoting
         OpenSSH = $OpenSSH
@@ -444,16 +484,21 @@ function Invoke-JindaInitialization {
     }
     $options = Get-JindaSetupOptions @choices
     $installAppsSelected = $options.InstallEssentialApps -or $options.InstallOptionalApps
+    $wingetAppsSelected = $installAppsSelected -or $options.InstallClamAV
+    $installSoftwareSelected = $wingetAppsSelected -or $options.InstallYodeck -or $options.InstallXibo -or $options.OpenSSH
 
     $selectedActions = [ordered]@{
         'Install essential apps' = $options.InstallEssentialApps
         'Install optional apps' = $options.InstallOptionalApps
+        'Install Yodeck Player' = $options.InstallYodeck
+        'Install Xibo Player' = $options.InstallXibo
+        'Install ClamAV for on-demand scans' = $options.InstallClamAV
         'Enable Remote Desktop (RDP)' = $options.RemoteDesktop
         'Enable PowerShell remoting (WinRM)' = $options.PowerShellRemoting
         'Install OpenSSH' = $options.OpenSSH
         'Uninstall unwanted apps' = $options.RemoveBundledApps
         'Uninstall Discord' = $options.RemoveDiscord
-        'Repair WinGet' = ($RepairWinGet -and $installAppsSelected)
+        'Repair WinGet' = ($RepairWinGet -and $wingetAppsSelected)
     }
     Write-Host ''
     Write-Host 'Setup choices'
@@ -475,7 +520,7 @@ function Invoke-JindaInitialization {
     $install = Join-Path $folder 'install-software.ps1'
     $config = Join-Path $folder 'set-windows-english.ps1'
     $requiredScripts = @($config)
-    if ($installAppsSelected -or $options.OpenSSH) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
+    if ($installSoftwareSelected) { $requiredScripts = @($install, $config, (Join-Path $folder 'skip-apps.conf')) }
     foreach ($path in $requiredScripts) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Incomplete script package: $path is missing. Use the new startup command from the GitHub README."
@@ -486,8 +531,8 @@ function Invoke-JindaInitialization {
     if ($options.RemoveDiscord) { Uninstall-JindaDiscord }
 
     $installCode = 0
-    if ($installAppsSelected -or $options.OpenSSH) {
-        if ($RepairWinGet -and $installAppsSelected) { Repair-JindaWinGet }
+    if ($installSoftwareSelected) {
+        if ($RepairWinGet -and $wingetAppsSelected) { Repair-JindaWinGet }
         $installArguments = @()
         if ($options.OpenSSH) {
             if (-not $SshPublicKey) {
@@ -498,6 +543,9 @@ function Invoke-JindaInitialization {
         if (-not $installAppsSelected) { $installArguments += '-SkipApps' }
         elseif (-not $options.InstallOptionalApps) { $installArguments += @('-AppGroup', 'Essential') }
         elseif (-not $options.InstallEssentialApps) { $installArguments += @('-AppGroup', 'Optional') }
+        if ($options.InstallYodeck) { $installArguments += '-InstallYodeck' }
+        if ($options.InstallXibo) { $installArguments += '-InstallXibo' }
+        if ($options.InstallClamAV) { $installArguments += '-InstallClamAV' }
         Write-Host 'Step 1/2: installing the selected software components.'
         $installCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $install -ScriptArguments $installArguments -NonInteractive
         if ($installCode -notin @(0, 3010)) { throw "Software installation failed (exit code $installCode). Configuration has not started." }
@@ -536,6 +584,10 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($WindowsHelloStatus -ne 'Not checked') { $scriptArguments += @('-WindowsHelloStatus', $WindowsHelloStatus) }
         if ($InstallEssentialApps -ne 'Ask') { $scriptArguments += @('-InstallEssentialApps', $InstallEssentialApps) }
         if ($InstallOptionalApps -ne 'Ask') { $scriptArguments += @('-InstallOptionalApps', $InstallOptionalApps) }
+        if ($InstallProjectionPlayers -ne 'Ask') { $scriptArguments += @('-InstallProjectionPlayers', $InstallProjectionPlayers) }
+        if ($InstallYodeck -ne 'Ask') { $scriptArguments += @('-InstallYodeck', $InstallYodeck) }
+        if ($InstallXibo -ne 'Ask') { $scriptArguments += @('-InstallXibo', $InstallXibo) }
+        if ($InstallClamAV -ne 'Ask') { $scriptArguments += @('-InstallClamAV', $InstallClamAV) }
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
         if ($RemoveDiscord -ne 'Ask') { $scriptArguments += @('-RemoveDiscord', $RemoveDiscord) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
@@ -548,6 +600,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                 InstallApps = $InstallApps
                 InstallEssentialApps = $InstallEssentialApps
                 InstallOptionalApps = $InstallOptionalApps
+                InstallProjectionPlayers = $InstallProjectionPlayers
+                InstallYodeck = $InstallYodeck
+                InstallXibo = $InstallXibo
+                InstallClamAV = $InstallClamAV
                 RemoteDesktop = $RemoteDesktop
                 PowerShellRemoting = $PowerShellRemoting
                 OpenSSH = $OpenSSH

@@ -31,6 +31,7 @@
     <p>Richt Windows 11 Pro in met <strong>Engels (VS) en US-International</strong>. Kies welke apps je wilt installeren en welke toegang op afstand je wilt inschakelen.</p>
     <p>Plak deze ene regel in PowerShell en accepteer de Windows-vraag om administratorrechten. Setup vraagt eerst naar <strong>essentiële apps [Y/n]</strong> en daarna naar <strong>optionele apps [y/N]</strong>. Vervolgens kies je voor Remote Desktop, WinRM, OpenSSH en het verwijderen van LinkedIn en Microsoft Solitaire Collection. Enter kiest bij die vier vragen <strong>No</strong>. Kies zo nodig het LAN.</p>
     <p>Als Discord is geïnstalleerd, vraagt setup ook <strong>Uninstall Discord? [y/N]</strong>. Kies <strong>Y</strong> om Discord te verwijderen.</p>
+    <p>Kies <strong>Install projection players? [y/N]</strong> voor aparte keuzes voor Yodeck en Xibo. Open Xibo na installatie zelf via Start.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
@@ -81,10 +82,15 @@
       <li><img src="assets/icons/signal.png" alt="" width="28" height="28"><span>Signal</span></li>
       <li><img src="assets/icons/obs-studio.png" alt="" width="28" height="28"><span>OBS Studio</span></li>
       <li><img src="assets/icons/adobe-reader.ico" alt="" width="28" height="28"><span>Adobe Acrobat Reader</span></li>
-      <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
       <li><img src="assets/icons/whatsapp.webp" alt="" width="28" height="28"><span>WhatsApp</span></li>
     </ul>
+    <h3>Projectieplayers</h3>
+    <ul class="app-list">
+      <li><img src="assets/icons/yodeck.webp" alt="" width="28" height="28"><span>Yodeck Player</span></li>
+      <li><span style="margin-left: 40px">Xibo Player</span></li>
+    </ul>
     <p>OpenSSH heeft een eigen keuze. Met Yes stelt het script SSH in op het gekozen LAN en voegt het de publieke salonsleutel toe voor ingeschakelde lokale Windows-gebruikers.</p>
+    <p>ClamAV heeft een eigen keuze (standaard Nee). De setup werkt de virusdefinities eenmalig bij. Scans en latere updates start je zelf. Windows Defender blijft actief.</p>
   </main>
   <footer><a href="https://github.com/acurvers/jinda-operations">Repository en volledige instructies</a></footer>
   <script>

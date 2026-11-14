@@ -63,10 +63,27 @@ Describe 'Preview and target validation without system changes' {
         $plan.Address | Should Be '192.168.50.200'
         $plan.Subnet | Should Be '192.168.50.0/24'
         ($plan.RemoteAddresses -join ',') | Should Be '192.168.50.0/24,10.6.0.3'
+        ($plan.PingRemoteAddresses -join ',') | Should Be '192.168.50.0/24,10.6.0.3'
         $plan.NetworkProfile | Should Be 'Public'
         $plan.RDPPort | Should Be 3389
         $plan.WinRMPort | Should Be 5985
         $plan.PowerShell7.Version | Should Be ([version]'7.6.9')
+    }
+
+    It 'scopes RDP and WinRM on the Heesch LAN to its management peer' {
+        $plan = Get-LanRemoteAccessPlan -EnableRemoteDesktop -EnableWinRM -Address '192.168.52.41'
+        ($plan.RemoteAddresses -join ',') | Should Be '192.168.52.0/24,10.6.0.2'
+        ($plan.PingRemoteAddresses -join ',') | Should Be '192.168.52.0/24,10.6.0.3'
+        Mock Set-NetFirewallRule {}
+        Set-LanRemoteAccessRuleScope -Plan $plan
+        Assert-MockCalled Set-NetFirewallRule -Times 2 -Exactly -Scope It -ParameterFilter {
+            $Name -like 'WINRM-*' -and ($RemoteAddress -join ',') -eq '192.168.52.0/24,10.6.0.2'
+        }
+        Assert-MockCalled Set-NetFirewallRule -Times 2 -Exactly -Scope It -ParameterFilter {
+            $Name -in 'RemoteDesktop-UserMode-In-TCP', 'RemoteDesktop-UserMode-In-UDP' -and
+            ($RemoteAddress -join ',') -eq '192.168.52.0/24,10.6.0.2' -and
+            $LocalAddress -eq '192.168.52.41' -and (@($InterfaceAlias)[0]).IsMatch('Ethernet')
+        }
     }
 
     It 'requires PowerShell 7 before changing anything when WinRM is selected' {
@@ -152,6 +169,7 @@ Describe 'Applying the plan with every mutating command mocked' {
         $script:testPlan = [pscustomobject]@{
             Address = '192.168.50.200'; Subnet = '192.168.50.0/24'; InterfaceAlias = 'Ethernet'
             RemoteAddresses = @('192.168.50.0/24', '10.6.0.3')
+            PingRemoteAddresses = @('192.168.50.0/24', '10.6.0.3')
             PingRuleName = 'Jinda-LAN-WireGuard-ICMPv4-In'
             RDPPort = 3390; WinRMPort = 5985; EnableRemoteDesktop = $true; EnableWinRM = $true
             PowerShell7 = [pscustomobject]@{ Path = 'C:\Program Files\PowerShell\7\pwsh.exe'; Version = [version]'7.6.9' }

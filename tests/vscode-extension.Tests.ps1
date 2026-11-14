@@ -3,7 +3,7 @@
 function Invoke-JindaFakeCode {
     $script:codeCalls.Add(@($args))
     if ($args -contains '--install-extension') {
-        $global:LASTEXITCODE = $script:codeInstallExit
+        $global:LASTEXITCODE = if ($args -contains '--log') { $script:codeRetryExit } else { $script:codeInstallExit }
     }
     else {
         $global:LASTEXITCODE = $script:codeListExit
@@ -44,9 +44,11 @@ Describe 'Installing the Microsoft PowerShell extension' {
     BeforeEach {
         $script:codeCalls = New-Object 'System.Collections.Generic.List[object]'
         $script:codeInstallExit = 0
+        $script:codeRetryExit = 0
         $script:codeListExit = 0
         $script:codeExtensions = @('ms-vscode.powershell', 'another.publisher')
         Mock Get-JindaVSCodeCliPath { 'Invoke-JindaFakeCode' }
+        Mock Start-Sleep {}
     }
 
     It 'installs or updates without prompts and verifies the installed extension' {
@@ -54,12 +56,23 @@ Describe 'Installing the Microsoft PowerShell extension' {
         $script:codeCalls.Count | Should Be 2
         ($script:codeCalls[0] -join ' ') | Should Be '--install-extension ms-vscode.PowerShell --force'
         ($script:codeCalls[1] -join ' ') | Should Be '--list-extensions'
+        Assert-MockCalled Start-Sleep -Times 0 -Exactly -Scope It
     }
 
-    It 'stops when installation fails even if an older extension was present' {
+    It 'retries a failed installation once with trace logging and verifies recovery' {
         $script:codeInstallExit = 1
-        { Install-JindaVSCodePowerShellExtension } | Should Throw 'installation failed (exit code 1)'
-        $script:codeCalls.Count | Should Be 1
+        Install-JindaVSCodePowerShellExtension
+        $script:codeCalls.Count | Should Be 3
+        ($script:codeCalls[1] -join ' ') | Should Be '--install-extension ms-vscode.PowerShell --force --log trace'
+        ($script:codeCalls[2] -join ' ') | Should Be '--list-extensions'
+        Assert-MockCalled Start-Sleep -Times 1 -Exactly -Scope It -ParameterFilter { $Seconds -eq 5 }
+    }
+
+    It 'stops when the retry fails even if an older extension was present' {
+        $script:codeInstallExit = 1
+        $script:codeRetryExit = 3
+        { Install-JindaVSCodePowerShellExtension } | Should Throw 'installation failed (exit code 3) after retry'
+        $script:codeCalls.Count | Should Be 2
     }
 
     It 'rejects a failed verification command' {

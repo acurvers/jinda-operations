@@ -26,7 +26,7 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Mock Get-NetFirewallRule { [pscustomobject]@{ Name = 'OpenSSH-Server-In-TCP' } }
         Mock Get-NetFirewallRule { $script:sshRule } -ParameterFilter { $PolicyStore -eq 'ActiveStore' }
         Mock Get-NetFirewallAddressFilter {
-            [pscustomobject]@{ LocalAddress = '192.168.50.40'; RemoteAddress = '192.168.50.32/255.255.255.224' }
+            [pscustomobject]@{ LocalAddress = '192.168.50.40'; RemoteAddress = @('10.6.0.3/255.255.255.255', '192.168.50.32/255.255.255.224') }
         }
         Mock Get-NetFirewallPortFilter { [pscustomobject]@{ Protocol = 'TCP'; LocalPort = '22' } }
         Mock Get-NetFirewallInterfaceFilter { [pscustomobject]@{ InterfaceAlias = 'Ethernet' } }
@@ -53,7 +53,7 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         }
         Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
             $Name -eq 'OpenSSH-Server-In-TCP' -and $PolicyStore -eq 'PersistentStore' -and
-            $RemoteAddress -eq '192.168.50.32/27' -and $LocalAddress -eq '192.168.50.40' -and
+            ($RemoteAddress -join ',') -eq '192.168.50.32/27,10.6.0.3' -and $LocalAddress -eq '192.168.50.40' -and
             $InterfaceAlias.Count -eq 1 -and $InterfaceAlias[0].IsMatch('Ethernet') -and
             -not $InterfaceAlias[0].IsMatch('Ethernet 2') -and $EdgeTraversalPolicy -eq 'Block' -and
             $LocalPort -eq 22 -and $Protocol -eq 'TCP' -and $Action -eq 'Allow' -and
@@ -130,11 +130,23 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Mock Get-NetFirewallRule { $null }
         Install-JindaOpenSSH | Should Be $false
         Assert-MockCalled New-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
-            $Name -eq 'OpenSSH-Server-In-TCP' -and $RemoteAddress -eq '192.168.50.32/27' -and
+            $Name -eq 'OpenSSH-Server-In-TCP' -and ($RemoteAddress -join ',') -eq '192.168.50.32/27,10.6.0.3' -and
             $LocalAddress -eq '192.168.50.40' -and $InterfaceAlias[0].IsMatch('Ethernet') -and
             $LocalPort -eq 22 -and [string]$Profile -eq 'Any'
         }
         Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
+    }
+
+    It 'allows the Heesch management address alongside the selected LAN' {
+        $script:sshAddresses[0].IPAddress = '192.168.52.41'
+        $script:sshAddresses[0].PrefixLength = 24
+        Mock Get-NetFirewallAddressFilter {
+            [pscustomobject]@{ LocalAddress = '192.168.52.41'; RemoteAddress = @('192.168.52.0/24', '10.6.0.2/32') }
+        }
+        Install-JindaOpenSSH | Should Be $false
+        Assert-MockCalled Set-NetFirewallRule -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($RemoteAddress -join ',') -eq '192.168.52.0/24,10.6.0.2'
+        }
     }
 
     It 'reports a Windows restart requirement and postpones service activation' {
