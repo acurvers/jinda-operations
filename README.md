@@ -51,6 +51,7 @@ hun eigen taalinstelling.
 | Uninstall unwanted apps? | Nee | LinkedIn en Microsoft Solitaire Collection blijven staan |
 | Uninstall Discord? (alleen als Discord is geïnstalleerd) | Nee | Discord blijft staan |
 | Restrict Chrome downloads to the Downloads folder? | Ja | Slaat de Chrome-downloadpolicy over |
+| Check for Windows updates? | Nee | Slaat het zoeken naar updates over |
 
 De Discord-keuze werkt ook als je de installatie van beide appgroepen overslaat.
 De setup controleert installaties voor het uitvoerende Windows-account en voor de hele pc.
@@ -58,6 +59,13 @@ De projectieplayers zijn ook los van beide appgroepen te kiezen.
 Bij **Y** gebruikt Chrome de verplichte policy `DownloadDirectory` met de waarde
 `${profile}\Downloads`. Chrome vult het Windows-profiel van iedere gebruiker in.
 Kies in `chrome://policy` **Reload policies** en controleer `DownloadDirectory`.
+
+De setup toont de geïnstalleerde Windows-editie, versie en volledige build. Na
+het configureren toont het log of Windows Update op een herstart wacht.
+Bij **Y** zoekt de setup via de ingestelde Windows Update-bron en rapporteert
+die de beschikbare updates en hun KB-nummers. De zoekactie kan enkele minuten
+duren en vraagt alleen update-informatie op. Gebruik `-CheckWindowsUpdates Yes|No`
+om de keuze vooraf in te vullen.
 
 Bij een RDP-, WinRM- of OpenSSH-keuze gebruikt init het actieve IPv4-adres. Zijn er meerdere,
 dan kies je ook het LAN aan het begin. Er is geen vast pc-adres ingebouwd.

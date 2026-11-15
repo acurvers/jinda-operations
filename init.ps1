@@ -38,6 +38,8 @@ Ask (default), Yes or No. Removes LinkedIn and Microsoft Solitaire Collection. D
 Ask (default), Yes or No. Offers to remove Discord if installed. The question defaults to No.
 .PARAMETER LockChromeDownloads
 Ask (default), Yes or No. Sets the mandatory Chrome Downloads folder. The question defaults to Yes.
+.PARAMETER CheckWindowsUpdates
+Ask (default), Yes or No. Searches for available Windows updates. The question defaults to No.
 .PARAMETER WindowsHelloPin
 Ask (default), Yes or No. Offers to open Windows Hello setup for the signed-in desktop user.
 The question defaults to No and only appears when Windows Hello is not configured.
@@ -70,7 +72,8 @@ param(
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
     [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask',
-    [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask'
+    [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask',
+    [ValidateSet('Ask', 'Yes', 'No')][string]$CheckWindowsUpdates = 'Ask'
 )
 
 # BEGIN shared runtime (kept identical in all entry scripts).
@@ -399,6 +402,55 @@ function Uninstall-JindaDiscord {
     Write-Host 'Discord was uninstalled.'
 }
 
+function Write-JindaWindowsVersion {
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $version = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
+        $build = $os.BuildNumber
+        if ($null -ne $version.UBR) { $build = "$build.$($version.UBR)" }
+        $displayVersion = if ($version.DisplayVersion) { " $($version.DisplayVersion)" }
+        Write-Host "Windows: $($os.Caption)$displayVersion (build $build)"
+    }
+    catch { Write-Warning "Could not read the Windows version: $($_.Exception.Message)" }
+}
+
+function Write-JindaWindowsUpdateStatus {
+    param([switch]$CheckForUpdates)
+
+    if ($CheckForUpdates) {
+        Write-Host 'Windows Update: checking for available updates. This may take a few minutes.'
+        try {
+            $session = New-Object -ComObject Microsoft.Update.Session -ErrorAction Stop
+            $searcher = $session.CreateUpdateSearcher()
+            $searcher.Online = $true
+            $result = $searcher.Search('IsInstalled = 0 and IsHidden = 0')
+            # WUA OperationResultCode 2 is success, 3 can contain partial results.
+            if ($result.ResultCode -notin @(2, 3)) { throw "Search returned result code $($result.ResultCode)." }
+            if ($result.ResultCode -eq 3) {
+                Write-Warning 'Windows Update completed the search with errors. The results may be incomplete.'
+            }
+            $updates = $result.Updates
+            Write-Host "Windows Update: $($updates.Count) available update(s) returned."
+            for ($index = 0; $index -lt $updates.Count; $index++) {
+                $update = $updates.Item($index)
+                $articles = foreach ($id in $update.KBArticleIDs) {
+                    if ($update.Title -notlike "*KB$id*") { "KB$id" }
+                }
+                $suffix = if ($articles) { " ($($articles -join ', '))" }
+                Write-Host "  - $($update.Title)$suffix"
+            }
+        }
+        catch { Write-Warning "Windows Update check failed: $($_.Exception.Message)" }
+    }
+
+    try {
+        $info = New-Object -ComObject Microsoft.Update.SystemInfo -ErrorAction Stop
+        $answer = if ($info.RebootRequired) { 'Yes' } else { 'No' }
+        Write-Host "Windows Update restart required: $answer"
+    }
+    catch { Write-Warning "Could not read the Windows Update restart status: $($_.Exception.Message)" }
+}
+
 function Get-JindaSetupOptions {
     param(
         [string]$InstallApps = 'Ask', [string]$RemoteDesktop = 'Ask',
@@ -406,7 +458,7 @@ function Get-JindaSetupOptions {
         [string]$LanIPAddress, [string]$RemoveBundledApps = 'Ask', [string]$RemoveDiscord = 'Ask',
         [string]$InstallEssentialApps = 'Ask', [string]$InstallOptionalApps = 'Ask',
         [string]$InstallProjectionPlayers = 'Ask', [string]$InstallYodeck = 'Ask', [string]$InstallXibo = 'Ask',
-        [string]$InstallClamAV = 'Ask', [string]$LockChromeDownloads = 'Ask'
+        [string]$InstallClamAV = 'Ask', [string]$LockChromeDownloads = 'Ask', [string]$CheckWindowsUpdates = 'Ask'
     )
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
@@ -429,6 +481,7 @@ function Get-JindaSetupOptions {
         $uninstallDiscord = Read-JindaYesNo -Prompt 'Uninstall Discord?' -Choice $RemoveDiscord
     }
     $lockDownloads = Read-JindaYesNo -Prompt 'Restrict Chrome downloads to the Downloads folder?' -Choice $LockChromeDownloads -Default $true
+    $checkUpdates = Read-JindaYesNo -Prompt 'Check for Windows updates?' -Choice $CheckWindowsUpdates
     $lan = $null
     if ($rdp -or $winrm -or $ssh) { $lan = Select-JindaLanAddress -Address $LanIPAddress }
     [pscustomobject]@{
@@ -439,6 +492,7 @@ function Get-JindaSetupOptions {
         OpenSSH = $ssh; RemoveBundledApps = $removeApps
         RemoveDiscord = $uninstallDiscord
         LockChromeDownloads = $lockDownloads
+        CheckWindowsUpdates = $checkUpdates
         LanIPAddress = [string]$lan.IPAddress
         LanInterfaceAlias = $lan.InterfaceAlias
         LanPrefixLength = $lan.PrefixLength
@@ -466,11 +520,14 @@ function Invoke-JindaInitialization {
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallYodeck = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallXibo = 'Ask',
         [ValidateSet('Ask', 'Yes', 'No')][string]$InstallClamAV = 'Ask',
-        [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask'
+        [ValidateSet('Ask', 'Yes', 'No')][string]$LockChromeDownloads = 'Ask',
+        [ValidateSet('Ask', 'Yes', 'No')][string]$CheckWindowsUpdates = 'Ask'
     )
 
     $ErrorActionPreference = 'Stop'
     if (-not $PSCmdlet.ShouldProcess('This PC', 'Install Jinda software and configure Windows')) { return 0 }
+
+    Write-JindaWindowsVersion
 
     # The start command downloads one complete source archive. Children never prompt.
     $choices = @{
@@ -487,6 +544,7 @@ function Invoke-JindaInitialization {
         RemoveBundledApps = $RemoveBundledApps
         RemoveDiscord = $RemoveDiscord
         LockChromeDownloads = $LockChromeDownloads
+        CheckWindowsUpdates = $CheckWindowsUpdates
         LanIPAddress = $LanIPAddress
     }
     $options = Get-JindaSetupOptions @choices
@@ -506,6 +564,7 @@ function Invoke-JindaInitialization {
         'Uninstall unwanted apps' = $options.RemoveBundledApps
         'Uninstall Discord' = $options.RemoveDiscord
         'Restrict Chrome downloads to the Downloads folder' = $options.LockChromeDownloads
+        'Check for Windows updates' = $options.CheckWindowsUpdates
         'Repair WinGet' = ($RepairWinGet -and $wingetAppsSelected)
     }
     Write-Host ''
@@ -573,6 +632,9 @@ function Invoke-JindaInitialization {
     $configCode = Invoke-JindaChildProcess -Executable (Get-JindaPowerShell) -ScriptPath $config -ScriptArguments $configArguments -NonInteractive
     if ($configCode -notin @(0, 3010)) { throw "Windows configuration failed (exit code $configCode)." }
 
+    Write-Host ''
+    Write-JindaWindowsUpdateStatus -CheckForUpdates:$options.CheckWindowsUpdates
+
     if ($installCode -eq 3010 -or $configCode -eq 3010) {
         Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'
         return 3010
@@ -600,6 +662,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($RemoveBundledApps -ne 'Ask') { $scriptArguments += @('-RemoveBundledApps', $RemoveBundledApps) }
         if ($RemoveDiscord -ne 'Ask') { $scriptArguments += @('-RemoveDiscord', $RemoveDiscord) }
         if ($LockChromeDownloads -ne 'Ask') { $scriptArguments += @('-LockChromeDownloads', $LockChromeDownloads) }
+        if ($CheckWindowsUpdates -ne 'Ask') { $scriptArguments += @('-CheckWindowsUpdates', $CheckWindowsUpdates) }
         if ($RepairWinGet) { $scriptArguments += '-RepairWinGet' }
         if ($LanIPAddress) { $scriptArguments += @('-LanIPAddress', $LanIPAddress) }
         if ($SshPublicKey) { $scriptArguments += @('-SshPublicKey', $SshPublicKey) }
@@ -620,6 +683,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 RemoveBundledApps = $RemoveBundledApps
                 RemoveDiscord = $RemoveDiscord
                 LockChromeDownloads = $LockChromeDownloads
+                CheckWindowsUpdates = $CheckWindowsUpdates
                 LanIPAddress = $LanIPAddress
                 SshPublicKey = $SshPublicKey
                 WindowsHelloStatus = $WindowsHelloStatus

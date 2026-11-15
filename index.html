@@ -33,6 +33,7 @@
     <p>Als Discord is geïnstalleerd, vraagt setup ook <strong>Uninstall Discord? [y/N]</strong>. Kies <strong>Y</strong> om Discord te verwijderen.</p>
     <p>Kies <strong>Install projection players? [y/N]</strong> voor aparte keuzes voor Yodeck en Xibo. Open Xibo na installatie zelf via Start.</p>
     <p>Bij <strong>Restrict Chrome downloads to the Downloads folder? [Y/n]</strong> stelt Enter de map Downloads van elke Windows-gebruiker verplicht in voor Chrome.</p>
+    <p>De setup logt de Windows-versie, de build en of Windows Update op een herstart wacht. Met <strong>Check for Windows updates? [y/N]</strong> kun je ook de beschikbare updates laten opzoeken.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">

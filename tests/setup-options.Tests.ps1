@@ -67,7 +67,7 @@ Describe 'Choices are collected once before unattended setup' {
     }
 
     It 'defaults to essential apps only and skips the individual player questions' {
-        foreach ($answer in @('', '', '', '', '', '', '', '', '')) { $script:answers.Enqueue($answer) }
+        foreach ($answer in @('', '', '', '', '', '', '', '', '', '')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
         $options.InstallEssentialApps | Should Be $true
         $options.InstallOptionalApps | Should Be $false
@@ -80,7 +80,8 @@ Describe 'Choices are collected once before unattended setup' {
         $options.RemoveBundledApps | Should Be $false
         $options.RemoveDiscord | Should Be $false
         $options.LockChromeDownloads | Should Be $true
-        $script:prompts.Count | Should Be 9
+        $options.CheckWindowsUpdates | Should Be $false
+        $script:prompts.Count | Should Be 10
         $script:prompts[0] | Should Be 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? [Y/n]'
         $script:prompts[1] | Should Be 'Install optional apps? [y/N]'
         $script:prompts[2] | Should Be 'Install projection players? [y/N]'
@@ -90,6 +91,7 @@ Describe 'Choices are collected once before unattended setup' {
         $script:prompts[6] | Should Be 'Install OpenSSH for the selected LAN and authorize the salon SSH key for local users? (N = skip) [y/N]'
         $script:prompts[7] | Should Be 'Uninstall unwanted apps? [y/N]'
         $script:prompts[8] | Should Be 'Restrict Chrome downloads to the Downloads folder? [Y/n]'
+        $script:prompts[9] | Should Be 'Check for Windows updates? [y/N]'
         Assert-MockCalled Select-JindaLanAddress -Times 0 -Exactly -Scope It
     }
 
@@ -100,14 +102,14 @@ Describe 'Choices are collected once before unattended setup' {
         param($Answer, $Expected)
         Mock Test-JindaDiscordInstalled { $true }
         $script:answers.Enqueue($Answer)
-        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No
+        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No -CheckWindowsUpdates No
         $options.RemoveDiscord | Should Be $Expected
         $script:prompts.Count | Should Be 1
         $script:prompts[0] | Should Be 'Uninstall Discord? [y/N]'
     }
 
     It 'accepts independent yes/no choices and selects the LAN before returning' {
-        foreach ($answer in @('n', 'y', 'n', 'y', 'y', 'n', 'y', 'y', 'n')) { $script:answers.Enqueue($answer) }
+        foreach ($answer in @('n', 'y', 'n', 'y', 'y', 'n', 'y', 'y', 'n', 'y')) { $script:answers.Enqueue($answer) }
         $options = Get-JindaSetupOptions
         $options.InstallEssentialApps | Should Be $false
         $options.InstallOptionalApps | Should Be $true
@@ -120,12 +122,13 @@ Describe 'Choices are collected once before unattended setup' {
         $options.OpenSSH | Should Be $true
         $options.RemoveBundledApps | Should Be $true
         $options.LockChromeDownloads | Should Be $false
+        $options.CheckWindowsUpdates | Should Be $true
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
     }
 
     It 'offers two independent player choices even when both regular app groups are declined' {
         foreach ($answer in @('y', '', 'y')) { $script:answers.Enqueue($answer) }
-        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No
+        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No -CheckWindowsUpdates No
         $options.InstallYodeck | Should Be $false
         $options.InstallXibo | Should Be $true
         ($script:prompts -join ', ') | Should Be 'Install projection players? [y/N], Install Yodeck Player? [y/N], Install Xibo Player? [y/N]'
@@ -138,13 +141,13 @@ Describe 'Choices are collected once before unattended setup' {
     }
 
     It 'selects the LAN when SSH is the only remote access option' {
-        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH Yes -RemoveBundledApps No -LockChromeDownloads No
+        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH Yes -RemoveBundledApps No -LockChromeDownloads No -CheckWindowsUpdates No
         $options.LanIPAddress | Should Be '10.20.30.40'
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It
     }
 
     It 'uses explicit parameter choices without prompts' {
-        $options = Get-JindaSetupOptions -InstallClamAV Yes -InstallEssentialApps No -InstallOptionalApps Yes -InstallProjectionPlayers Yes -InstallYodeck Yes -InstallXibo No -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -RemoveBundledApps Yes -LockChromeDownloads Yes -LanIPAddress '10.20.30.40'
+        $options = Get-JindaSetupOptions -InstallClamAV Yes -InstallEssentialApps No -InstallOptionalApps Yes -InstallProjectionPlayers Yes -InstallYodeck Yes -InstallXibo No -RemoteDesktop No -PowerShellRemoting Yes -OpenSSH Yes -RemoveBundledApps Yes -LockChromeDownloads Yes -CheckWindowsUpdates Yes -LanIPAddress '10.20.30.40'
         $options.InstallEssentialApps | Should Be $false
         $options.InstallOptionalApps | Should Be $true
         $options.InstallYodeck | Should Be $true
@@ -154,15 +157,16 @@ Describe 'Choices are collected once before unattended setup' {
         $options.OpenSSH | Should Be $true
         $options.RemoveBundledApps | Should Be $true
         $options.LockChromeDownloads | Should Be $true
+        $options.CheckWindowsUpdates | Should Be $true
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
         Assert-MockCalled Select-JindaLanAddress -Times 1 -Exactly -Scope It -ParameterFilter { $Address -eq '10.20.30.40' }
     }
 
     It 'uses the legacy app choice for both groups unless a group is explicitly set' {
-        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps Yes -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No
+        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps Yes -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No -CheckWindowsUpdates No
         $options.InstallEssentialApps | Should Be $true
         $options.InstallOptionalApps | Should Be $true
-        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallEssentialApps Yes -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No
+        $options = Get-JindaSetupOptions -InstallClamAV No -InstallApps No -InstallEssentialApps Yes -InstallProjectionPlayers No -RemoteDesktop No -PowerShellRemoting No -OpenSSH No -RemoveBundledApps No -LockChromeDownloads No -CheckWindowsUpdates No
         $options.InstallEssentialApps | Should Be $true
         $options.InstallOptionalApps | Should Be $false
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It

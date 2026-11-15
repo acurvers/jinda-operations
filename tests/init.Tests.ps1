@@ -1,5 +1,77 @@
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'init.ps1')
 
+Describe 'Reporting Windows version and update status' {
+    BeforeEach {
+        Mock Write-Host {}
+        Mock Write-Warning {}
+        $updates = [pscustomobject]@{
+            Items = @(
+                [pscustomobject]@{ Title = 'Windows cumulative update'; KBArticleIDs = @('5020001') }
+                [pscustomobject]@{ Title = 'Security update (KB5020002)'; KBArticleIDs = @('5020002') }
+                [pscustomobject]@{ Title = 'Driver update'; KBArticleIDs = @() }
+            )
+            Count = 3
+        }
+        $updates | Add-Member ScriptMethod Item { param($Index) $this.Items[$Index] }
+        $script:searcher = [pscustomobject]@{
+            Online = $false; Criteria = ''; Result = [pscustomobject]@{ ResultCode = 2; Updates = $updates }
+        }
+        $script:searcher | Add-Member ScriptMethod Search { param($Criteria) $this.Criteria = $Criteria; $this.Result }
+        $script:session = [pscustomobject]@{ Searcher = $script:searcher }
+        $script:session | Add-Member ScriptMethod CreateUpdateSearcher { $this.Searcher }
+        Mock New-Object { $script:session } -ParameterFilter { $ComObject -eq 'Microsoft.Update.Session' }
+        Mock New-Object { [pscustomobject]@{ RebootRequired = $true } } -ParameterFilter { $ComObject -eq 'Microsoft.Update.SystemInfo' }
+    }
+
+    It 'prints the Windows edition, release and build revision' {
+        Mock Get-CimInstance { [pscustomobject]@{ Caption = 'Microsoft Windows 11 Pro'; BuildNumber = '26200' } }
+        Mock Get-ItemProperty { [pscustomobject]@{ DisplayVersion = '25H2'; UBR = 1234 } }
+        Write-JindaWindowsVersion
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows: Microsoft Windows 11 Pro 25H2 (build 26200.1234)' }
+    }
+
+    It 'searches online and reports update titles, KB numbers and pending restart' {
+        Write-JindaWindowsUpdateStatus -CheckForUpdates
+        $script:searcher.Online | Should Be $true
+        $script:searcher.Criteria | Should Be 'IsInstalled = 0 and IsHidden = 0'
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update: 3 available update(s) returned.' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  - Windows cumulative update (KB5020001)' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  - Security update (KB5020002)' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  - Driver update' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update restart required: Yes' }
+        Assert-MockCalled Write-Warning -Times 0 -Exactly -Scope It
+    }
+
+    It 'reports zero updates after a successful empty search' {
+        $script:searcher.Result.Updates.Count = 0
+        Write-JindaWindowsUpdateStatus -CheckForUpdates
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update: 0 available update(s) returned.' }
+        Assert-MockCalled Write-Warning -Times 0 -Exactly -Scope It
+    }
+
+    It 'warns when update results may be incomplete' {
+        $script:searcher.Result.ResultCode = 3
+        Write-JindaWindowsUpdateStatus -CheckForUpdates
+        Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter { $Message -like '*results may be incomplete*' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update: 3 available update(s) returned.' }
+    }
+
+    It 'reports a scan error and still reports whether Windows Update needs a restart' {
+        Mock New-Object { throw 'Update service unavailable' } -ParameterFilter { $ComObject -eq 'Microsoft.Update.Session' }
+        Write-JindaWindowsUpdateStatus -CheckForUpdates
+        Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter { $Message -eq 'Windows Update check failed: Update service unavailable' }
+        Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like '*available update(s) returned*' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update restart required: Yes' }
+    }
+
+    It 'only reads the local restart status when the scan is declined' {
+        Mock New-Object { [pscustomobject]@{ RebootRequired = $false } } -ParameterFilter { $ComObject -eq 'Microsoft.Update.SystemInfo' }
+        Write-JindaWindowsUpdateStatus
+        Assert-MockCalled New-Object -Times 0 -Exactly -Scope It -ParameterFilter { $ComObject -eq 'Microsoft.Update.Session' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows Update restart required: No' }
+    }
+}
+
 Describe 'Initialization orchestrates the two existing scripts' {
     BeforeEach {
         $script:initEvents = New-Object 'System.Collections.Generic.List[string]'
@@ -15,6 +87,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Mock Test-Path { $script:initEvents.Add("validate:$LiteralPath"); $true }
         Mock Invoke-WebRequest { throw 'Unexpected download' }
         Mock Write-Host {}
+        Mock Write-JindaWindowsVersion {}
+        Mock Write-JindaWindowsUpdateStatus {}
         Mock Get-JindaPowerShell {
             if ($script:initLaunches.Count -eq 0) { 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' }
             else { 'C:\Program Files\PowerShell\7\pwsh.exe' }
@@ -31,6 +105,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed.' }
         Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like '*Restart Windows*' }
         Assert-MockCalled Uninstall-JindaDiscord -Times 0 -Exactly -Scope It
+        Assert-MockCalled Write-JindaWindowsVersion -Times 1 -Exactly -Scope It
+        Assert-MockCalled Write-JindaWindowsUpdateStatus -Times 1 -Exactly -Scope It -ParameterFilter { -not $CheckForUpdates }
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'
         $script:initEvents[2] | Should Match '^validate:.*set-windows-english.ps1$'
@@ -152,6 +228,15 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Restrict Chrome downloads to the Downloads folder: Yes' }
         $script:initLaunches.Count | Should Be 1
         ($script:initLaunches[0].Arguments -join ' ') | Should Be '-Keyboard USInternational -LockChromeDownloads'
+    }
+
+    It 'logs and runs the selected Windows Update check independently of app installation' {
+        Mock Get-JindaSetupOptions { [pscustomobject]@{ CheckWindowsUpdates = $true } }
+        Invoke-JindaInitialization -CheckWindowsUpdates Yes | Should Be 0
+        Assert-MockCalled Get-JindaSetupOptions -Times 1 -Exactly -Scope It -ParameterFilter { $CheckWindowsUpdates -eq 'Yes' }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq '  Check for Windows updates: Yes' }
+        Assert-MockCalled Write-JindaWindowsUpdateStatus -Times 1 -Exactly -Scope It -ParameterFilter { $CheckForUpdates }
+        $script:initLaunches.Count | Should Be 1
     }
 
     It 'removes Discord and records the choice even when both app groups are declined' {
@@ -320,6 +405,7 @@ Describe 'Initialization entry point forwards the repair switch' {
         $OpenSSH = 'Yes'
         $RemoveDiscord = 'Yes'
         $LockChromeDownloads = 'No'
+        $CheckWindowsUpdates = 'Yes'
         $LanIPAddress = '10.20.30.40'
         & $script:initEntry
         Assert-MockCalled Invoke-JindaWindowsHelloPinSetup -Times 1 -Exactly -Scope It
@@ -330,6 +416,7 @@ Describe 'Initialization entry point forwards the repair switch' {
             ($ScriptArguments -join ' ') -match '-OpenSSH Yes' -and
             ($ScriptArguments -join ' ') -match '-RemoveDiscord Yes' -and
             ($ScriptArguments -join ' ') -match '-LockChromeDownloads No' -and
+            ($ScriptArguments -join ' ') -match '-CheckWindowsUpdates Yes' -and
             ($ScriptArguments -join ' ') -match '-InstallEssentialApps Yes -InstallOptionalApps No' -and
             ($ScriptArguments -join ' ') -match '-InstallProjectionPlayers Yes -InstallYodeck No -InstallXibo Yes' -and
             ($ScriptArguments -join ' ') -match '-WindowsHelloStatus Settings opened' -and
