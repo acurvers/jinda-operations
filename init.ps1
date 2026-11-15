@@ -463,7 +463,7 @@ function Get-JindaSetupOptions {
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
     if ($InstallOptionalApps -eq 'Ask') { $InstallOptionalApps = $InstallApps }
-    $essential = Read-JindaYesNo -Prompt 'Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)?' -Choice $InstallEssentialApps -Default $true
+    $essential = Read-JindaYesNo -Prompt 'Install essential apps (PowerShell 7, VS Code, Everything, Notepad++, Chrome and LastPass)?' -Choice $InstallEssentialApps -Default $true
     $optional = Read-JindaYesNo -Prompt 'Install optional apps?' -Choice $InstallOptionalApps
     $yodeck = $false
     $xibo = $false

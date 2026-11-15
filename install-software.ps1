@@ -673,9 +673,9 @@ function Get-JindaSoftwarePackages {
     # Scope is only forced when the manifest supports it; empty means installer default.
     # Ordinary apps without the Essential flag belong to the optional group.
     return @(
+        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix'); Essential = $true }
         @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
-        @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix') }
         @{ Id = 'Windows.OpenSSH'; Name = 'OpenSSH client and server'; Source = 'windows-capability' }
         @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         # Current desktop OneNote, not the retired OneNote for Windows 10.

@@ -279,17 +279,17 @@ Describe 'All requested Jinda applications' {
         $script:wingetCalls.Count | Should Be 0
     }
 
-    It 'allows upgrades for every package and keeps the stable PowerShell machine MSI' {
+    It 'installs the stable PowerShell machine MSI first and allows upgrades for every app' {
         $result = Install-JindaSoftware
         $result | Should Be $false
         $script:wingetCalls.Count | Should Be 20
-        ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
-        ($script:wingetCalls[1] -contains 'TeamViewer.TeamViewer') | Should Be $true
-        ($script:wingetCalls[1] -contains 'nullsoft') | Should Be $true
-        ($script:wingetCalls[2] -contains 'Microsoft.PowerShell') | Should Be $true
-        ($script:wingetCalls[2] -contains 'Microsoft.PowerShell.Preview') | Should Be $false
-        ($script:wingetCalls[2] -contains '--version') | Should Be $false
-        ($script:wingetCalls[2] -contains 'wix') | Should Be $true
+        ($script:wingetCalls[0] -contains 'Microsoft.PowerShell') | Should Be $true
+        ($script:wingetCalls[0] -contains 'Microsoft.PowerShell.Preview') | Should Be $false
+        ($script:wingetCalls[0] -contains '--version') | Should Be $false
+        ($script:wingetCalls[0] -contains 'wix') | Should Be $true
+        ($script:wingetCalls[1] -contains 'Google.Chrome') | Should Be $true
+        ($script:wingetCalls[2] -contains 'TeamViewer.TeamViewer') | Should Be $true
+        ($script:wingetCalls[2] -contains 'nullsoft') | Should Be $true
         foreach ($call in $script:wingetCalls) {
             ($call -contains '--silent') | Should Be $true
             ($call -contains '--no-upgrade') | Should Be $false
@@ -331,11 +331,11 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'warns about the reported Chrome source error and still attempts every remaining app' {
-        $script:wingetExitCodes[0] = -1978335217
+        $script:wingetExitCodes[1] = -1978335217
         $warnings = @()
         Install-JindaSoftware -InstallYodeck -WarningVariable warnings | Should Be $false
         $script:wingetCalls.Count | Should Be 20
-        ($script:wingetCalls[0] -contains 'Google.Chrome') | Should Be $true
+        ($script:wingetCalls[1] -contains 'Google.Chrome') | Should Be $true
         ($warnings -join ' ') | Should Match 'Google Chrome.*0x8A15000F.*continue'
         Assert-MockCalled Install-JindaYodeck -Times 1 -Exactly -Scope It
     }
@@ -348,15 +348,15 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'stops on the same source error in TeamViewer after allowing the Chrome error' {
-        $script:wingetExitCodes[0] = -1978335217
         $script:wingetExitCodes[1] = -1978335217
+        $script:wingetExitCodes[2] = -1978335217
         { Install-JindaSoftware } | Should Throw 'TeamViewer: WinGet failed'
-        $script:wingetCalls.Count | Should Be 2
+        $script:wingetCalls.Count | Should Be 3
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
     }
 
     It 'still stops immediately for a failure in each earlier non-Chrome WinGet app' {
-        foreach ($failedIndex in 1..18) {
+        foreach ($failedIndex in (@(0) + (2..18))) {
             $script:wingetCalls = New-Object 'System.Collections.Generic.List[object]'
             $script:wingetExitCodes = @(0) * 20
             $script:wingetExitCodes[$failedIndex] = 1
@@ -367,16 +367,16 @@ Describe 'All requested Jinda applications' {
     }
 
     It 'preserves a later restart requirement after the Chrome error' {
-        $script:wingetExitCodes[0] = 1
+        $script:wingetExitCodes[1] = 1
         $script:wingetExitCodes[2] = 3010
         Install-JindaSoftware | Should Be $true
         $script:wingetCalls.Count | Should Be 20
     }
 
-    It 'reports a PowerShell installation failure after the other packages succeed' {
-        $script:wingetExitCodes = @(0, 0, 1)
+    It 'reports a PowerShell installation failure before attempting other apps' {
+        $script:wingetExitCodes[0] = 1
         { Install-JindaSoftware } | Should Throw 'PowerShell 7: WinGet failed'
-        $script:wingetCalls.Count | Should Be 3
+        $script:wingetCalls.Count | Should Be 1
     }
 
     It 'does not run WinGet during WhatIf' {
@@ -407,9 +407,9 @@ Describe 'All requested Jinda applications' {
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 0 -Exactly -Scope It
     }
 
-    It 'installs the five essential apps with the existing VS Code extension step' {
+    It 'installs PowerShell first in the essential group and still installs the VS Code extension' {
         Install-JindaSoftware -AppGroup Essential | Should Be $false
-        ($script:appOrder -join ',') | Should Be 'Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,LastPass.LastPass,voidtools.Everything'
+        ($script:appOrder -join ',') | Should Be 'Microsoft.PowerShell,Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,LastPass.LastPass,voidtools.Everything'
         Assert-MockCalled Install-JindaVSCodePowerShellExtension -Times 1 -Exactly -Scope It
         Assert-MockCalled Install-JindaOpenSSH -Times 0 -Exactly -Scope It
     }
@@ -417,12 +417,12 @@ Describe 'All requested Jinda applications' {
     It 'keeps the local skip list effective when only essential apps are selected' {
         Mock Get-JindaSkippedApps { @('LastPass.LastPass') }
         Install-JindaSoftware -AppGroup Essential | Should Be $false
-        ($script:appOrder -join ',') | Should Be 'Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,voidtools.Everything'
+        ($script:appOrder -join ',') | Should Be 'Microsoft.PowerShell,Google.Chrome,Microsoft.VisualStudioCode,Notepad++.Notepad++,voidtools.Everything'
     }
 
     It 'installs the optional apps and handles the independent SSH choice' {
         Install-JindaSoftware -AppGroup Optional -EnableOpenSSH | Should Be $false
-        ($script:appOrder -join ',') | Should Be 'TeamViewer.TeamViewer,Microsoft.PowerShell,XPFFZHVGQWWLHB,Reolink.Reolink,dotPDN.PaintDotNet,Git.Git,Zoom.Zoom,VideoLAN.VLC,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,9NKSQGP7F2NH'
+        ($script:appOrder -join ',') | Should Be 'TeamViewer.TeamViewer,XPFFZHVGQWWLHB,Reolink.Reolink,dotPDN.PaintDotNet,Git.Git,Zoom.Zoom,VideoLAN.VLC,ScooterSoftware.BeyondCompare.5,9NT1R1C2HH7J,OpenAI.ChatGPT,OpenWhisperSystems.Signal,OBSProject.OBSStudio,Adobe.Acrobat.Reader.64-bit,9NKSQGP7F2NH'
         Assert-MockCalled Install-JindaOpenSSH -Times 1 -Exactly -Scope It
         Assert-MockCalled Install-JindaYodeck -Times 0 -Exactly -Scope It
         Assert-MockCalled Install-JindaXibo -Times 0 -Exactly -Scope It
@@ -449,7 +449,7 @@ Describe 'All requested Jinda applications' {
     It 'includes all twenty active WinGet packages once, excluding Discord and Teams, and Yodeck once in the same run' {
         Install-JindaSoftware -InstallYodeck | Should Be $false
         $ids = @($script:wingetCalls | ForEach-Object { $_[2] })
-        $expected = @('Google.Chrome','TeamViewer.TeamViewer','Microsoft.PowerShell','Microsoft.VisualStudioCode',
+        $expected = @('Microsoft.PowerShell','Google.Chrome','TeamViewer.TeamViewer','Microsoft.VisualStudioCode',
             'XPFFZHVGQWWLHB','Notepad++.Notepad++','Reolink.Reolink','dotPDN.PaintDotNet',
             'LastPass.LastPass','Git.Git','Zoom.Zoom','VideoLAN.VLC','voidtools.Everything','ScooterSoftware.BeyondCompare.5',
             '9NT1R1C2HH7J','OpenAI.ChatGPT','OpenWhisperSystems.Signal','OBSProject.OBSStudio','Adobe.Acrobat.Reader.64-bit','9NKSQGP7F2NH')

@@ -39,7 +39,7 @@ hun eigen taalinstelling.
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
 | Set up a Windows Hello PIN for this Windows account? | Nee | Slaat Windows Hello over |
-| Install essential apps (VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de vijf essentiële apps over |
+| Install essential apps (PowerShell 7, VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de zes essentiële apps over |
 | Install optional apps? | Nee | Slaat de overige apps over |
 | Install projection players? | Nee | Slaat de twee playervragen over |
 | Install Yodeck Player? | Nee | Verschijnt na Yes bij projectieplayers |
@@ -267,15 +267,16 @@ er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het scr
 voordat de apps beginnen. Kies je aan het begin geen app-installatie, dan wordt
 ook deze WinGet-update overgeslagen.
 
-VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel. Yodeck, Xibo en
-ClamAV hebben eigen keuzes. De overige apps vallen onder de optionele keuze. `skip-apps.conf`
-geldt voor alle groepen.
+PowerShell 7, VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel.
+PowerShell 7 is de eerste app die setup na de WinGet-controles installeert of bijwerkt.
+Yodeck, Xibo en ClamAV hebben eigen keuzes. De overige apps vallen onder de
+optionele keuze. `skip-apps.conf` geldt voor alle groepen.
 
 | App | Pakket / bron | Installatiebereik |
 | --- | --- | --- |
+| PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
 | Chrome | Google.Chrome / winget | Alle gebruikers |
 | TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
-| PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
 | OpenSSH client en server (eigen y/n-keuze; standaard Nee) | Windows optional features / `Windows.OpenSSH` in skip-apps.conf | Alle gebruikers; SSH-service en LAN-firewallregel |
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
@@ -460,10 +461,11 @@ niet aangepast.
 Bij WinRM = Y gebruikt de configuratie de nieuwste geinstalleerde stabiele,
 native 64-bits PowerShell 7 om het endpoint `PowerShell.7` in te richten.
 Een ouder endpoint wordt bijgewerkt met behoud van zijn toegangsrechten.
-De app-installatie werkt PowerShell vooraf bij als er een update beschikbaar is.
-Bij apps = N wordt de nieuwste al aanwezige versie gebruikt; ontbreekt PowerShell 7,
-dan stopt de configuratie vooraf met een duidelijke melding. WinRM = N laat ook
-dit endpoint ongewijzigd. De inrichting kan de WinRM-service herstarten.
+Met essentiële apps = Y kan setup PowerShell 7 vooraf installeren of bijwerken.
+Bij essentiële apps = N gebruikt setup de nieuwste al aanwezige versie. Ontbreekt
+PowerShell 7, dan stopt de WinRM-configuratie vooraf met een duidelijke melding.
+WinRM = N slaat de inrichting van dit endpoint over. De inrichting kan de
+WinRM-service herstarten.
 
 De WinRM-beveiligingsstap leest eerst `AllowUnencrypted` en `Basic`. Waarden die
 al `false` zijn, worden niet opnieuw geschreven: ook een overbodige schrijfopdracht
