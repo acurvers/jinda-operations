@@ -402,7 +402,57 @@ function Uninstall-JindaDiscord {
     Write-Host 'Discord was uninstalled.'
 }
 
+function Write-JindaWindows11Support {
+    param([string]$EditionId, [string]$DisplayVersion)
+
+    $product = switch -Regex ($EditionId) {
+        '^(Core(N|SingleLanguage|CountrySpecific)?|Professional(Education|Workstation)?N?)$' { 'windows-11-home-and-pro' }
+        '^(EnterpriseN?|EducationN?|ServerRdsh)$' { 'windows-11-enterprise-and-education' }
+    }
+    if (-not $product) {
+        Write-Host "Windows release support: Unknown for edition '$EditionId'."
+        return
+    }
+
+    $uri = "https://learn.microsoft.com/en-us/lifecycle/products/$product"
+    try {
+        $response = Invoke-WebRequest -Uri $uri -Headers @{ Accept = 'text/markdown' } -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        $rows = [regex]::Matches($response.Content, '(?m)^\|[ \t]*Version[ \t]+(\d{2}H[12])[ \t]*\|[ \t]*([^|\r\n]+)\|[ \t]*([^|\r\n]+)\|')
+        $culture = [Globalization.CultureInfo]::InvariantCulture
+        $dateFormat = 'M/d/yyyy h:mm:ss tt'
+        $releases = foreach ($row in $rows) {
+            [pscustomobject]@{
+                Version = $row.Groups[1].Value
+                Start = [datetime]::ParseExact($row.Groups[2].Value.Trim(), $dateFormat, $culture)
+                End = [datetime]::ParseExact($row.Groups[3].Value.Trim(), $dateFormat, $culture)
+            }
+        }
+
+        # Microsoft publishes lifecycle timestamps in Pacific Time.
+        $pacific = [TimeZoneInfo]::FindSystemTimeZoneById('Pacific Standard Time')
+        $now = [TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $pacific)
+        # 26H1 is limited to new devices and is not an in-place feature update.
+        $latest = $releases | Where-Object { $_.Version -ne '26H1' -and $_.Start -le $now -and $_.End -ge $now } |
+            Sort-Object Start -Descending | Select-Object -First 1
+        if (-not $latest) { throw 'No current general release was found in the Microsoft Lifecycle table.' }
+
+        $installed = $releases | Where-Object { $_.Version -eq $DisplayVersion } | Select-Object -First 1
+        if ($installed -and $installed.Start -le $now) {
+            $endDate = $installed.End.ToString('yyyy-MM-dd HH:mm', $culture)
+            $status = if ($installed.End -ge $now) { 'Supported until' } else { 'Support ended on' }
+            Write-Host "Windows release support: $status $endDate PT."
+        }
+        else { Write-Host "Windows release support: Unknown for version '$DisplayVersion'." }
+        Write-Host "Latest general Windows 11 release from Microsoft: $($latest.Version)"
+    }
+    catch {
+        Write-Warning "Could not verify Windows release support or the latest general release against Microsoft Lifecycle: $($_.Exception.Message)"
+    }
+}
+
 function Write-JindaWindowsVersion {
+    param([switch]$IncludeSupport)
+
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
         $version = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop
@@ -410,6 +460,12 @@ function Write-JindaWindowsVersion {
         if ($null -ne $version.UBR) { $build = "$build.$($version.UBR)" }
         $displayVersion = if ($version.DisplayVersion) { " $($version.DisplayVersion)" }
         Write-Host "Windows: $($os.Caption)$displayVersion (build $build)"
+        if ($IncludeSupport) {
+            if ($version.InstallationType -eq 'Client' -and [int]$os.BuildNumber -ge 22000) {
+                Write-JindaWindows11Support -EditionId $version.EditionID -DisplayVersion $version.DisplayVersion
+            }
+            else { Write-Host 'Windows release support: This check covers standard Windows 11 client editions.' }
+        }
     }
     catch { Write-Warning "Could not read the Windows version: $($_.Exception.Message)" }
 }
@@ -463,7 +519,7 @@ function Get-JindaSetupOptions {
     Write-Host 'Choose the setup options now. Setup will then continue without further questions.'
     if ($InstallEssentialApps -eq 'Ask') { $InstallEssentialApps = $InstallApps }
     if ($InstallOptionalApps -eq 'Ask') { $InstallOptionalApps = $InstallApps }
-    $essential = Read-JindaYesNo -Prompt 'Install essential apps (PowerShell 7, VS Code, Everything, Notepad++, Chrome and LastPass)?' -Choice $InstallEssentialApps -Default $true
+    $essential = Read-JindaYesNo -Prompt 'Install essential apps (TeamViewer, PowerShell 7, VS Code, Everything, Notepad++, Chrome, LastPass and Git Bash)?' -Choice $InstallEssentialApps -Default $true
     $optional = Read-JindaYesNo -Prompt 'Install optional apps?' -Choice $InstallOptionalApps
     $yodeck = $false
     $xibo = $false
@@ -634,6 +690,8 @@ function Invoke-JindaInitialization {
 
     Write-Host ''
     Write-JindaWindowsUpdateStatus -CheckForUpdates:$options.CheckWindowsUpdates
+    Write-Host ''
+    Write-JindaWindowsVersion -IncludeSupport
 
     if ($installCode -eq 3010 -or $configCode -eq 3010) {
         Write-Host 'Jinda setup completed. Restart Windows to apply the changes.'

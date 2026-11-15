@@ -33,7 +33,7 @@
     <p>Als Discord is geïnstalleerd, vraagt setup ook <strong>Uninstall Discord? [y/N]</strong>. Kies <strong>Y</strong> om Discord te verwijderen.</p>
     <p>Kies <strong>Install projection players? [y/N]</strong> voor aparte keuzes voor Yodeck en Xibo. Open Xibo na installatie zelf via Start.</p>
     <p>Bij <strong>Restrict Chrome downloads to the Downloads folder? [Y/n]</strong> stelt Enter de map Downloads van elke Windows-gebruiker verplicht in voor Chrome.</p>
-    <p>De setup logt de Windows-versie, de build en of Windows Update op een herstart wacht. Met <strong>Check for Windows updates? [y/N]</strong> kun je ook de beschikbare updates laten opzoeken.</p>
+    <p>Het eindoverzicht en het log tonen de Windows-editie, versie, build en supportstatus, de nieuwste algemene Windows 11-versie en of Windows Update op een herstart wacht. Met <strong>Check for Windows updates? [y/N]</strong> kun je ook de beschikbare updates laten opzoeken.</p>
     <div class="command-row">
       <pre><code id="init-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; $p = &quot;$env:TEMP\jinda-$([guid]::NewGuid().ToString('N'))&quot;; iwr https://github.com/acurvers/jinda-operations/archive/refs/heads/main.zip -UseBasicParsing -OutFile &quot;$p.zip&quot; -TimeoutSec 60; Expand-Archive -LiteralPath &quot;$p.zip&quot; -DestinationPath $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\jinda-operations-main\init.ps1&quot; }</code></pre>
       <button class="copy-button" id="copy-command" data-copy-target="init-code" data-status-target="copy-status" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
@@ -61,20 +61,20 @@
     <p>Apps overslaan? Verwijder het eerste <code>#</code> bij de app in <a href="https://github.com/acurvers/jinda-operations/blob/main/skip-apps.conf">skip-apps.conf</a> en sla de wijziging op in GitHub. Dezelfde startopdracht gebruikt die keuze bij de volgende run; bestaande apps blijven staan.</p>
     <h3>Essentiële apps</h3>
     <ul class="app-list">
-      <li><img src="assets/icons/powershell.png" alt="" width="28" height="28"><span>PowerShell 7 <small>(nieuwste stabiele versie, als eerste)</small></span></li>
+      <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer <small>(als eerste)</small></span></li>
+      <li><img src="assets/icons/powershell.png" alt="" width="28" height="28"><span>PowerShell 7 <small>(nieuwste stabiele versie)</small></span></li>
       <li><img src="assets/icons/vscode.png" alt="" width="28" height="28"><span>Visual Studio Code <small>(met PowerShell-extensie)</small></span></li>
       <li><img src="assets/icons/everything.ico" alt="" width="28" height="28"><span>Everything <small>(bestanden zoeken)</small></span></li>
       <li><img src="assets/icons/notepadplusplus.ico" alt="" width="28" height="28"><span>Notepad++</span></li>
       <li><img src="assets/icons/chrome.png" alt="" width="28" height="28"><span>Google Chrome</span></li>
       <li><img src="assets/icons/lastpass.ico" alt="" width="28" height="28"><span>LastPass</span></li>
+      <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>
     </ul>
     <h3>Optionele apps</h3>
     <ul class="app-list">
-      <li><img src="assets/icons/teamviewer.webp" alt="" width="28" height="28"><span>TeamViewer</span></li>
       <li><img src="assets/icons/onenote.png" alt="" width="28" height="28"><span>OneNote</span></li>
       <li><img src="assets/icons/reolink.png" alt="" width="28" height="28"><span>Reolink Client</span></li>
       <li><img src="assets/icons/paintnet.png" alt="" width="28" height="28"><span>Paint.NET</span></li>
-      <li><img src="assets/icons/git.ico" alt="" width="28" height="28"><span>Git Bash</span></li>
       <li><img src="assets/icons/zoom.ico" alt="" width="28" height="28"><span>Zoom</span></li>
       <li><img src="assets/icons/teams.ico" alt="" width="28" height="28"><span>Microsoft Teams <small>(tijdelijk uitgeschakeld)</small></span></li>
       <li><img src="assets/icons/vlc.png" alt="" width="28" height="28"><span>VLC</span></li>

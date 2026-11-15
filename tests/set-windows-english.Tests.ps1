@@ -115,6 +115,8 @@ Describe 'Optional removal of bundled Windows apps' {
 Describe 'Windows English system defaults' {
     BeforeEach {
         $script:packInstalled = $true
+        $script:gbPackInstalled = $false
+        $script:gbPreferred = $false
         $script:mutationOrder = New-Object 'System.Collections.Generic.List[string]'
         Mock Import-Module {}
         Mock Test-JindaAdministrator { $true }
@@ -124,8 +126,11 @@ Describe 'Windows English system defaults' {
         Mock Get-Culture { [System.Globalization.CultureInfo]::GetCultureInfo('nl-NL') }
         Mock Get-InstalledLanguage {
             $result = New-Object 'System.Collections.Generic.List[object]'
-            if ($script:packInstalled) {
+            if ($Language -eq 'en-US' -and $script:packInstalled) {
                 $result.Add([pscustomobject]@{ LanguageId = 'en-US'; LanguagePacks = 'LpCab' })
+            }
+            if ($Language -eq 'en-GB' -and $script:gbPackInstalled) {
+                $result.Add([pscustomobject]@{ LanguageId = 'en-GB'; LanguagePacks = 'LpCab, LXP' })
             }
             Write-Output -NoEnumerate $result
         }
@@ -134,6 +139,10 @@ Describe 'Windows English system defaults' {
             $oldList = New-WinUserLanguageList -Language 'nl-NL'
             $english = New-WinUserLanguageList -Language 'en-US'
             $oldList.Add($english[0])
+            if ($script:gbPreferred) {
+                $britishEnglish = New-WinUserLanguageList -Language 'en-GB'
+                $oldList.Add($britishEnglish[0])
+            }
             Write-Output -NoEnumerate $oldList
         }
         Mock Set-WinCultureFromLanguageListOptOut { $script:mutationOrder.Add('PreserveCulture') }
@@ -184,6 +193,27 @@ Describe 'Windows English system defaults' {
         Assert-MockCalled Install-Language -Times 1 -Exactly -Scope It -ParameterFilter { $Language -eq 'en-US' -and $ExcludeFeatures -and -not $CopyToSettings }
         Assert-MockCalled Get-InstalledLanguage -Times 2 -Exactly -Scope It
         $script:mutationOrder.Count | Should Be 7
+    }
+
+    It 'applies the installed US display pack without reapplying an uninstalled UK preference' {
+        $script:gbPreferred = $true
+        Set-JindaWindowsEnglish
+        Assert-MockCalled Install-Language -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-WinUserLanguageList -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($LanguageList.LanguageTag -join ',') -eq 'en-US,nl-NL'
+        }
+    }
+
+    It 'keeps an installed UK preference when the US pack needs installation' {
+        $script:packInstalled = $false
+        $script:gbPreferred = $true
+        $script:gbPackInstalled = $true
+        Set-JindaWindowsEnglish
+        Assert-MockCalled Install-Language -Times 1 -Exactly -Scope It
+        Assert-MockCalled Install-Language -Times 1 -Exactly -Scope It -ParameterFilter { $Language -eq 'en-US' }
+        Assert-MockCalled Set-WinUserLanguageList -Times 1 -Exactly -Scope It -ParameterFilter {
+            ($LanguageList.LanguageTag -join ',') -eq 'en-US,nl-NL,en-GB'
+        }
     }
 
     It 'stops before changing settings when installation fails' {

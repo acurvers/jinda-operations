@@ -673,9 +673,9 @@ function Get-JindaSoftwarePackages {
     # Scope is only forced when the manifest supports it; empty means installer default.
     # Ordinary apps without the Essential flag belong to the optional group.
     return @(
+        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft'); Essential = $true }
         @{ Id = 'Microsoft.PowerShell'; Name = 'PowerShell 7'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'wix'); Essential = $true }
         @{ Id = 'Google.Chrome'; Name = 'Google Chrome'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
-        @{ Id = 'TeamViewer.TeamViewer'; Name = 'TeamViewer'; Source = 'winget'; Scope = 'machine'; Extra = @('--installer-type', 'nullsoft') }
         @{ Id = 'Windows.OpenSSH'; Name = 'OpenSSH client and server'; Source = 'windows-capability' }
         @{ Id = 'Microsoft.VisualStudioCode'; Name = 'Visual Studio Code'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         # Current desktop OneNote, not the retired OneNote for Windows 10.
@@ -684,7 +684,7 @@ function Get-JindaSoftwarePackages {
         @{ Id = 'Reolink.Reolink'; Name = 'Reolink Client'; Source = 'winget'; Scope = ''; Extra = @() }
         @{ Id = 'dotPDN.PaintDotNet'; Name = 'Paint.NET'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         @{ Id = 'LastPass.LastPass'; Name = 'LastPass'; Source = 'winget'; Scope = ''; Extra = @(); Essential = $true }
-        @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @() }
+        @{ Id = 'Git.Git'; Name = 'Git (including Git Bash)'; Source = 'winget'; Scope = 'machine'; Extra = @(); Essential = $true }
         @{ Id = 'Zoom.Zoom'; Name = 'Zoom'; Source = 'winget'; Scope = 'machine'; Extra = @() }
         # Temporarily disabled: Microsoft Teams installation is not working reliably (user report).
         # @{ Id = 'Microsoft.Teams'; Name = 'Microsoft Teams'; Source = 'winget'; Scope = 'user'; Extra = @('--installer-type', 'msix') }

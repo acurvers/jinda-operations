@@ -39,7 +39,7 @@ hun eigen taalinstelling.
 | Vraag | Enter kiest | Bij nee |
 | --- | --- | --- |
 | Set up a Windows Hello PIN for this Windows account? | Nee | Slaat Windows Hello over |
-| Install essential apps (PowerShell 7, VS Code, Everything, Notepad++, Chrome and LastPass)? | Ja | Slaat de zes essentiële apps over |
+| Install essential apps (TeamViewer, PowerShell 7, VS Code, Everything, Notepad++, Chrome, LastPass and Git Bash)? | Ja | Slaat de acht essentiële apps over |
 | Install optional apps? | Nee | Slaat de overige apps over |
 | Install projection players? | Nee | Slaat de twee playervragen over |
 | Install Yodeck Player? | Nee | Verschijnt na Yes bij projectieplayers |
@@ -60,8 +60,12 @@ Bij **Y** gebruikt Chrome de verplichte policy `DownloadDirectory` met de waarde
 `${profile}\Downloads`. Chrome vult het Windows-profiel van iedere gebruiker in.
 Kies in `chrome://policy` **Reload policies** en controleer `DownloadDirectory`.
 
-De setup toont de geïnstalleerde Windows-editie, versie en volledige build. Na
-het configureren toont het log of Windows Update op een herstart wacht.
+De setup toont de geïnstalleerde Windows-editie, versie en volledige build. In
+het eindoverzicht en het log staan ook de supportstatus voor Windows 11
+Home/Pro of Enterprise/Education en de nieuwste algemeen beschikbare
+Windows 11-versie volgens Microsoft Lifecycle. De datum geldt voor de release
+en editie. Of deze pc een upgrade krijgt, blijkt uit de aparte updatecheck.
+Na het configureren toont het log of Windows Update op een herstart wacht.
 Bij **Y** zoekt de setup via de ingestelde Windows Update-bron en rapporteert
 die de beschikbare updates en hun KB-nummers. De zoekactie kan enkele minuten
 duren en vraagt alleen update-informatie op. Gebruik `-CheckWindowsUpdates Yes|No`
@@ -267,16 +271,16 @@ er is geen extra PowerShell-module nodig. Bij een echte updatefout stopt het scr
 voordat de apps beginnen. Kies je aan het begin geen app-installatie, dan wordt
 ook deze WinGet-update overgeslagen.
 
-PowerShell 7, VS Code, Everything, Notepad++, Chrome en LastPass zijn essentieel.
-PowerShell 7 is de eerste app die setup na de WinGet-controles installeert of bijwerkt.
+TeamViewer, PowerShell 7, VS Code, Everything, Notepad++, Chrome, LastPass en Git inclusief Git Bash zijn essentieel.
+Na de WinGet-controles komt TeamViewer als eerste en PowerShell 7 als tweede.
 Yodeck, Xibo en ClamAV hebben eigen keuzes. De overige apps vallen onder de
 optionele keuze. `skip-apps.conf` geldt voor alle groepen.
 
 | App | Pakket / bron | Installatiebereik |
 | --- | --- | --- |
+| TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
 | PowerShell 7 | Microsoft.PowerShell / winget, stabiele MSI (wix) | Alle gebruikers |
 | Chrome | Google.Chrome / winget | Alle gebruikers |
-| TeamViewer | TeamViewer.TeamViewer / winget, volledige nullsoft-client | Alle gebruikers |
 | OpenSSH client en server (eigen y/n-keuze; standaard Nee) | Windows optional features / `Windows.OpenSSH` in skip-apps.conf | Alle gebruikers; SSH-service en LAN-firewallregel |
 | VS Code | Microsoft.VisualStudioCode / winget | Alle gebruikers |
 | OneNote | XPFFZHVGQWWLHB / msstore | Standaard van installer |
@@ -420,7 +424,9 @@ systeemlocale voor oudere niet-Unicode-programma's op en-US.
 
 Gebruik -Keyboard USInternational voor US-International of -Keyboard US
 voor normaal US. Zonder parameter is US de standaard; init op de
-webpagina kiest US-International. Overige talen blijven beschikbaar.
+webpagina kiest US-International. Overige taalvoorkeuren blijven beschikbaar.
+Zodra en-US beschikbaar is, slaat de setup een bestaande en-GB-voorkeur
+over als het en-GB-weergavetaalpakket ontbreekt.
 
 Datum- en getalnotatie blijven behouden. Land/regio van het uitvoerende account
 en tijdzone worden niet aangepast. Het kopieren naar systeemaccounts en nieuwe

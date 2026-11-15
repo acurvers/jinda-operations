@@ -495,10 +495,12 @@ function Invoke-LanRemoteAccessSetup {
 # END LAN remote access.
 
 function Test-JindaEnglishLanguagePack {
+    param([string]$Language = 'en-US')
+
     # Deze cmdlet geeft een List terug als een enkel pipeline-object.
-    $languages = Get-InstalledLanguage -Language 'en-US' -ErrorAction Stop
-    foreach ($language in $languages) {
-        if ($language.LanguageId -eq 'en-US' -and [string]$language.LanguagePacks -match 'LpCab') {
+    $packages = Get-InstalledLanguage -Language $Language -ErrorAction Stop
+    foreach ($package in $packages) {
+        if ($package.LanguageId -eq $Language -and [string]$package.LanguagePacks -match 'LpCab|LXP') {
             return $true
         }
     }
@@ -564,6 +566,8 @@ function Set-JindaWindowsEnglish {
         if (-not (Test-JindaEnglishLanguagePack)) {
             throw 'The en-US display language pack is not available yet. Restart Windows and run the script again.'
         }
+    } else {
+        Write-Host 'The en-US display language pack is already installed. Skipping the download.'
     }
 
     $languageList = New-WinUserLanguageList -Language 'en-US'
@@ -571,9 +575,12 @@ function Set-JindaWindowsEnglish {
     $languageList[0].InputMethodTips.Add($inputTip)
     # Engels wordt de eerste voorkeur; overige talen blijven beschikbaar.
     foreach ($existingLanguage in (Get-WinUserLanguageList)) {
-        if ($existingLanguage.LanguageTag -ne 'en-US') {
-            $languageList.Add($existingLanguage)
+        if ($existingLanguage.LanguageTag -eq 'en-US') { continue }
+        if ($existingLanguage.LanguageTag -eq 'en-GB' -and -not (Test-JindaEnglishLanguagePack -Language 'en-GB')) {
+            Write-Host 'Skipping the en-GB language preference because en-US is available and en-GB has no installed display language pack.'
+            continue
         }
+        $languageList.Add($existingLanguage)
     }
 
     # Voorkom dat de Engelse UI ook datum- en getalnotatie omzet naar Amerikaans.

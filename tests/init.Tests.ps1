@@ -30,6 +30,45 @@ Describe 'Reporting Windows version and update status' {
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows: Microsoft Windows 11 Pro 25H2 (build 26200.1234)' }
     }
 
+    It 'uses the edition lifecycle dates and reports the latest generally available upgrade release' -TestCases @(
+        @{ Installed = '25H2'; Now = '2026-07-01'; ExpectedLatest = '25H2'; ExpectedSupport = 'Supported until 2027-10-13 06:59 PT.' }
+        @{ Installed = '26H1'; Now = '2026-07-01'; ExpectedLatest = '25H2'; ExpectedSupport = 'Supported until 2028-03-15 06:59 PT.' }
+        @{ Installed = '24H2'; Now = '2026-11-15'; ExpectedLatest = '26H2'; ExpectedSupport = 'Support ended on 2026-10-14 06:59 PT.' }
+        @{ Installed = '99H2'; Now = '2026-11-15'; ExpectedLatest = '26H2'; ExpectedSupport = "Unknown for version '99H2'." }
+    ) {
+        param($Installed, $Now, $ExpectedLatest, $ExpectedSupport)
+        $script:releaseDate = [datetime]::ParseExact($Now, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture).AddHours(12)
+        Mock Get-Date { $script:releaseDate }
+        Mock Invoke-WebRequest {
+            [pscustomobject]@{ Content = @'
+| Version | Start Date | End Date |
+| --- | --- | --- |
+| Version 26H2 | 9/29/2026 8:00:00 AM | 10/10/2028 6:59:59 AM |
+| Version 26H1 | 2/10/2026 8:00:00 AM | 3/15/2028 6:59:59 AM |
+| Version 25H2 | 9/30/2025 8:00:00 AM | 10/13/2027 6:59:59 AM |
+| Version 24H2 | 10/1/2024 8:00:00 AM | 10/14/2026 6:59:59 AM |
+'@ }
+        }
+
+        Write-JindaWindows11Support -EditionId Professional -DisplayVersion $Installed
+        Assert-MockCalled Invoke-WebRequest -Times 1 -Exactly -Scope It -ParameterFilter {
+            $Uri.AbsoluteUri -eq 'https://learn.microsoft.com/en-us/lifecycle/products/windows-11-home-and-pro' -and
+            $Headers['Accept'] -eq 'text/markdown'
+        }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq "Windows release support: $ExpectedSupport" }
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq "Latest general Windows 11 release from Microsoft: $ExpectedLatest" }
+    }
+
+    It 'still prints the installed version when the Microsoft lookup fails' {
+        Mock Get-CimInstance { [pscustomobject]@{ Caption = 'Microsoft Windows 11 Enterprise'; BuildNumber = '26100' } }
+        Mock Get-ItemProperty { [pscustomobject]@{ DisplayVersion = '24H2'; UBR = 1234; EditionID = 'Enterprise'; InstallationType = 'Client' } }
+        Mock Invoke-WebRequest { throw 'Microsoft Learn unavailable' }
+        Write-JindaWindowsVersion -IncludeSupport
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Windows: Microsoft Windows 11 Enterprise 24H2 (build 26100.1234)' }
+        Assert-MockCalled Invoke-WebRequest -Times 1 -Exactly -Scope It -ParameterFilter { $Uri.AbsoluteUri -like '*/windows-11-enterprise-and-education' }
+        Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter { $Message -like 'Could not verify Windows release support*' }
+    }
+
     It 'searches online and reports update titles, KB numbers and pending restart' {
         Write-JindaWindowsUpdateStatus -CheckForUpdates
         $script:searcher.Online | Should Be $true
@@ -105,7 +144,8 @@ Describe 'Initialization orchestrates the two existing scripts' {
         Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'Jinda setup completed.' }
         Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { $Object -like '*Restart Windows*' }
         Assert-MockCalled Uninstall-JindaDiscord -Times 0 -Exactly -Scope It
-        Assert-MockCalled Write-JindaWindowsVersion -Times 1 -Exactly -Scope It
+        Assert-MockCalled Write-JindaWindowsVersion -Times 1 -Exactly -Scope It -ParameterFilter { -not $IncludeSupport }
+        Assert-MockCalled Write-JindaWindowsVersion -Times 1 -Exactly -Scope It -ParameterFilter { $IncludeSupport }
         Assert-MockCalled Write-JindaWindowsUpdateStatus -Times 1 -Exactly -Scope It -ParameterFilter { -not $CheckForUpdates }
         $script:initEvents[0] | Should Be 'choices'
         $script:initEvents[1] | Should Match '^validate:.*install-software.ps1$'

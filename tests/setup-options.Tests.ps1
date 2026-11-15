@@ -82,7 +82,7 @@ Describe 'Choices are collected once before unattended setup' {
         $options.LockChromeDownloads | Should Be $true
         $options.CheckWindowsUpdates | Should Be $false
         $script:prompts.Count | Should Be 10
-        $script:prompts[0] | Should Be 'Install essential apps (PowerShell 7, VS Code, Everything, Notepad++, Chrome and LastPass)? [Y/n]'
+        $script:prompts[0] | Should Be 'Install essential apps (TeamViewer, PowerShell 7, VS Code, Everything, Notepad++, Chrome, LastPass and Git Bash)? [Y/n]'
         $script:prompts[1] | Should Be 'Install optional apps? [y/N]'
         $script:prompts[2] | Should Be 'Install projection players? [y/N]'
         $script:prompts[3] | Should Be 'Install ClamAV for on-demand scans? [y/N]'
