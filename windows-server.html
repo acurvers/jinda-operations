@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jinda Operations — Windows Server 2012</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #16312c; background: #f3f6f3; }
+    body { max-width: 900px; margin: 48px auto; padding: 0 24px; line-height: 1.65; }
+    h1 { font-size: 2.2rem; line-height: 1.2; }
+    a { color: #14634f; }
+    code { font-family: Consolas, monospace; }
+    .command-row { display: flex; align-items: flex-start; border: 1px solid #d5dfd8; border-radius: 8px; background: white; }
+    pre { flex: 1; min-width: 0; margin: 0; padding: 18px; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; word-wrap: break-word; }
+    button { flex: 0 0 44px; height: 44px; margin: 8px; border: 1px solid #d5dfd8; border-radius: 6px; color: #14634f; background: #f3f6f3; cursor: pointer; }
+    button:hover { background: #e3eee6; border-color: #14634f; }
+    button:focus { outline: 2px solid #14634f; }
+    #copy-status { min-height: 1.5em; margin-top: 4px; }
+    footer { margin-top: 32px; border-top: 1px solid #d5dfd8; padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Windows Server 2012</h1>
+    <p>Alleen <strong>Remote Desktop, WinRM en IPv4-ping</strong>. Geschikt voor Windows PowerShell <strong>3.0</strong> op Server 2012/R2; schakelt zo nodig van x86 naar 64-bit.</p>
+    <p>Plak deze ene regel in PowerShell en accepteer zo nodig de administratorvraag. Kies vooraf <strong>y/n</strong>, de LAN-adapter en toegestane bronadressen. <strong>N = overslaan</strong>; bestaande toegang blijft dan zoals die is.</p>
+    <!-- package-sha256 -->
+    <div class="command-row">
+      <pre><code id="server-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $p = Join-Path $env:TEMP (&quot;jinda-server-&quot; + [guid]::NewGuid().ToString(&quot;N&quot;)); $z = $p + &quot;.zip&quot;; $expected = &quot;72ac91433c901cd3593725c46d6d259f38be20d3d618508af37570f026167255&quot;; iwr &quot;https://raw.githubusercontent.com/acurvers/jinda-operations/main/windows-server.zip&quot; -UseBasicParsing -OutFile $z -TimeoutSec 60; $s = [IO.File]::OpenRead($z); $h = [Security.Cryptography.SHA256]::Create(); try { $actual = [BitConverter]::ToString($h.ComputeHash($s)).Replace(&quot;-&quot;, &quot;&quot;).ToLowerInvariant() } finally { $s.Dispose(); $h.Dispose() }; if ($actual -ne $expected) { throw &quot;ZIP checksum mismatch. Copy the current command from the Server webpage.&quot; }; Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($z, $p); powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$p\Enable-ServerRemoteAccess.ps1&quot; }</code></pre>
+      <button id="copy-command" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path></svg>
+      </button>
+    </div>
+    <p id="copy-status" role="status" aria-live="polite"></p>
+    <p>De standaardregels in <strong>Windows Firewall met geavanceerde beveiliging op de server</strong> worden begrensd tot het gekozen LAN-adres en de opgegeven bronnen. Standaard is dat het LAN-subnet; voeg een beheer- of VPN-adres uit een ander subnet zelf toe. Andere custom regels kunnen ook toegang toestaan of blokkeren.</p>
+    <p>WinRM gebruikt de aanwezige Windows PowerShell op HTTP/5985 en kan de WinRM-service herstarten. RDP behoudt zijn poort en gebruikt NLA. Geen apps, taal- of wachtwoordaanpassingen en geen automatische serverherstart.</p>
+    <p>Server 2012/R2 is uit ondersteuning. Test de verbinding vanaf de beheer-pc na uitvoering.</p>
+  </main>
+  <footer><a href="https://raw.githubusercontent.com/acurvers/jinda-operations/main/windows-server.zip">windows-server.zip</a> · <a href="https://github.com/acurvers/jinda-operations/tree/main/windows-server">Broncode en uitleg</a> · <a href="./">Windows 11-setup</a></footer>
+  <script>
+    (function () {
+      var button = document.getElementById('copy-command');
+      var status = document.getElementById('copy-status');
+      function fallback(text) {
+        var field = document.createElement('textarea');
+        field.value = text; field.style.position = 'fixed'; field.style.opacity = '0';
+        document.body.appendChild(field); field.select();
+        var copied = false;
+        try { copied = document.execCommand('copy'); } finally { document.body.removeChild(field); }
+        if (!copied) { throw new Error('copy failed'); }
+      }
+      button.onclick = function () {
+        var text = document.getElementById('server-code').textContent;
+        function ok() { status.textContent = 'Opdracht gekopieerd.'; }
+        function legacy() { try { fallback(text); ok(); } catch (error) { status.textContent = 'Selecteer en kopieer de opdracht handmatig.'; } }
+        if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(ok, legacy); }
+        else { legacy(); }
+      };
+    }());
+  </script>
+</body>
+</html>
