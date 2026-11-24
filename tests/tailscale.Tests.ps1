@@ -7,6 +7,109 @@ if ($env:JINDA_TEST_TAILSCALE_REF) {
     . (Join-Path (Split-Path $PSScriptRoot -Parent) 'configure-tailscale.ps1')
 }
 
+Describe 'Optional single-host Tailscale subnet router' {
+    BeforeEach {
+        $script:routerAddresses = @(
+            [pscustomobject]@{ IPAddress = '192.168.40.20'; PrefixLength = 24; InterfaceIndex = 7; InterfaceAlias = 'Ethernet'; AddressState = 'Preferred' }
+            [pscustomobject]@{ IPAddress = '100.77.66.55'; PrefixLength = 32; InterfaceIndex = 9; InterfaceAlias = 'Tailscale'; AddressState = 'Preferred' }
+            [pscustomobject]@{ IPAddress = '10.8.0.5'; PrefixLength = 24; InterfaceIndex = 11; InterfaceAlias = 'Other LAN'; AddressState = 'Preferred' }
+        )
+        $script:routerForwarding = @{}
+        foreach ($index in @(7,9,11)) { foreach ($store in @('ActiveStore','PersistentStore')) { $script:routerForwarding["${store}:$index"] = 'Disabled' } }
+        $script:routerRoutes = '10.20.0.0/16'
+        $script:routerSetExit = 0
+        $script:routerUnattended = $false
+        $script:routerRouteNextHop = '0.0.0.0'
+        $script:routerRunning = 'Running'
+        Mock Get-JindaTailscaleCliPath { 'fake-tailscale.exe' }
+        Mock Get-JindaTailscaleStatus { [pscustomobject]@{ BackendState = $script:routerRunning; TailscaleIPs = @('100.77.66.55') } }
+        Mock Get-NetIPAddress { $script:routerAddresses }
+        Mock Find-NetRoute { [pscustomobject]@{ NextHop = $script:routerRouteNextHop; InterfaceIndex = 7; DestinationPrefix = '192.168.40.0/24' } }
+        Mock Get-NetIPInterface {
+            [pscustomobject]@{ InterfaceIndex = $InterfaceIndex; Forwarding = $script:routerForwarding["${PolicyStore}:$InterfaceIndex"] }
+        }
+        Mock Set-NetIPInterface {
+            foreach ($store in @('ActiveStore','PersistentStore')) { $script:routerForwarding["${store}:$InterfaceIndex"] = 'Enabled' }
+        }
+        Mock Initialize-JindaTailscale {}
+        Mock Test-JindaSubnetTargetRdp { $true }
+        Mock Invoke-JindaTailscaleCli {
+            if ($Arguments[0] -eq 'get') {
+                return [pscustomobject]@{ ExitCode = 0; Output = (@{ 'accept-dns' = $false; 'accept-routes' = $false; 'exit-node' = ''; 'advertise-routes' = $script:routerRoutes; 'unattended' = $script:routerUnattended } | ConvertTo-Json -Compress); Error = '' }
+            }
+            if ($Arguments[0] -eq 'set' -and $Arguments[1] -like '--advertise-routes=*') {
+                if ($script:routerSetExit -eq 0) {
+                    $script:routerRoutes = $Arguments[1].Substring('--advertise-routes='.Length)
+                    if ($Arguments -contains '--unattended=true') { $script:routerUnattended = $true }
+                }
+                return [pscustomobject]@{ ExitCode = $script:routerSetExit; Output = ''; Error = 'simulated route error' }
+            }
+            throw 'Unexpected router CLI call'
+        }
+    }
+    It 'adds only the requested /32 and preserves existing advertisements' {
+        Enable-JindaSubnetRouter
+        $script:routerRoutes | Should Be '10.20.0.0/16,192.168.40.13/32'
+        Assert-MockCalled Set-NetIPInterface -Times 2 -Exactly -Scope It -ParameterFilter { $InterfaceIndex[0] -in @(7,9) -and $Forwarding -eq 'Enabled' -and -not $PolicyStore }
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It -ParameterFilter { $InterfaceIndex -eq 11 }
+        Assert-MockCalled Initialize-JindaTailscale -Times 1 -Exactly -Scope It
+    }
+    It 'refuses to run on the target Server 2012 host itself' {
+        $script:routerAddresses[0].IPAddress = '192.168.40.13'
+        { Enable-JindaSubnetRouter } | Should Throw 'not on 192.168.40.13 itself'
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It
+        Assert-MockCalled Initialize-JindaTailscale -Times 0 -Exactly -Scope It
+    }
+    It 'requires a directly connected LAN and does not use an unrelated gateway' {
+        $script:routerRouteNextHop = '192.168.40.1'
+        { Enable-JindaSubnetRouter } | Should Throw 'reachable directly'
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It
+    }
+    It 'does not configure forwarding without an active Tailscale login' {
+        $script:routerRunning = 'NeedsLogin'
+        { Enable-JindaSubnetRouter } | Should Throw 'Sign in to Tailscale first'
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It
+    }
+    It 'requires an explicit LAN address when multiple LAN addresses match' {
+        $script:routerAddresses += [pscustomobject]@{ IPAddress = '192.168.40.21'; PrefixLength = 24; InterfaceIndex = 12; InterfaceAlias = 'Second LAN'; AddressState = 'Preferred' }
+        { Get-JindaSubnetRouterPlan -Path 'fake.exe' } | Should Throw 'Supply -LanIPAddress'
+        (Get-JindaSubnetRouterPlan -Path 'fake.exe' -LanIPAddress '192.168.40.20').Lan.IPAddress | Should Be '192.168.40.20'
+    }
+    It 'does not duplicate an already advertised /32 on a later run' {
+        $script:routerRoutes = '10.20.0.0/16,192.168.40.13/32'
+        Enable-JindaSubnetRouter
+        $script:routerRoutes | Should Be '10.20.0.0/16,192.168.40.13/32'
+    }
+    It 'fails if forwarding did not persist rather than claiming success' {
+        Mock Set-NetIPInterface { $script:routerForwarding["ActiveStore:$InterfaceIndex"] = 'Enabled' }
+        { Enable-JindaSubnetRouter } | Should Throw 'not enabled in PersistentStore'
+    }
+    It 'fails when Tailscale rejects advertising the route' {
+        $script:routerSetExit = 1
+        { Enable-JindaSubnetRouter } | Should Throw 'Could not advertise'
+    }
+    It 'can verify persisted settings after a restart without reapplying anything' {
+        foreach ($index in @(7,9)) { foreach ($store in @('ActiveStore','PersistentStore')) { $script:routerForwarding["${store}:$index"] = 'Enabled' } }
+        $script:routerRoutes = '192.168.40.13/32'
+        $script:routerUnattended = $true
+        Enable-JindaSubnetRouter -VerifyOnly
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It
+        Assert-MockCalled Initialize-JindaTailscale -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaTailscaleCli -Times 0 -Exactly -Scope It -ParameterFilter { $Arguments[0] -eq 'set' }
+    }
+    It 'reports an RDP reachability problem on the destination separately from the route setup' {
+        Mock Test-JindaSubnetTargetRdp { $false }
+        Enable-JindaSubnetRouter -WarningVariable warning
+        ($warning -join ' ') | Should Match 'Windows Firewall with Advanced Security on 192.168.40.13, allowing source 192.168.40.20'
+    }
+    It 'does not inspect or change routing in WhatIf' {
+        Enable-JindaSubnetRouter -WhatIf
+        Assert-MockCalled Get-NetIPAddress -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-NetIPInterface -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-JindaTailscaleCli -Times 0 -Exactly -Scope It
+    }
+}
+
 Describe 'Standalone Tailscale script and start command' {
     It 'captures native output, error output and nonzero exit codes without a visible console' {
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("Write-Output 'test-output'; [Console]::Error.WriteLine('test-error'); exit 3"))
@@ -15,7 +118,7 @@ Describe 'Standalone Tailscale script and start command' {
         $result.Output | Should Match 'test-output'
         $result.Error | Should Match 'test-error'
     }
-    It 'requires an existing installation and does not install apps or configure Windows' {
+    It 'requires an existing installation without app, password or RDP setup' {
         $text = [IO.File]::ReadAllText((Join-Path (Split-Path $PSScriptRoot -Parent) 'configure-tailscale.ps1'))
         $text | Should Not Match 'winget|Install-Language|Enable-PSRemoting|New-NetFirewallRule|LimitBlankPasswordUse|--auth-key'
         $text | Should Match '#Requires -Version 5.1'
@@ -33,6 +136,56 @@ Describe 'Standalone Tailscale script and start command' {
         $tokens = $null; $errors = $null
         [void][Management.Automation.Language.Parser]::ParseInput($command, [ref]$tokens, [ref]$errors)
         $errors.Count | Should Be 0
+    }
+    It 'provides a separate copied command for only the subnet-router option' {
+        $root = Split-Path $PSScriptRoot -Parent
+        $page = [IO.File]::ReadAllText((Join-Path $root 'tailscale.html'))
+        $command = [Net.WebUtility]::HtmlDecode([regex]::Match($page, '<code id="subnetrouter-code">(.*?)</code>').Groups[1].Value)
+        $command | Should Match '-File \$p -SubnetRouter'
+        $hash = (Get-FileHash (Join-Path $root 'configure-tailscale.ps1') -Algorithm SHA256).Hash
+        $command | Should Match $hash
+        $page | Should Match "bindCopy\('copy-subnetrouter-command', 'subnetrouter-code', 'copy-subnetrouter-status'\)"
+        $tokens = $null; $errors = $null
+        [void][Management.Automation.Language.Parser]::ParseInput($command, [ref]$tokens, [ref]$errors)
+        $errors.Count | Should Be 0
+    }
+}
+
+$entryFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'configure-tailscale.ps1'
+$entryAst = [Management.Automation.Language.Parser]::ParseFile($entryFile, [ref]$null, [ref]$null)
+$entryTry = $entryAst.EndBlock.Statements[-1].Clauses[0].Item2.Statements[0]
+$entryBody = ($entryTry.Body.Statements | Where-Object { $_ -isnot [Management.Automation.Language.ExitStatementAst] } | ForEach-Object { $_.Extent.Text }) -join "`n"
+$script:tailscaleEntry = [scriptblock]::Create($entryBody.Replace('$PSCommandPath', "'C:\Test Folder\configure-tailscale.ps1'"))
+
+Describe 'Subnet-router flags survive runtime relaunch' {
+    BeforeEach {
+        $SubnetRouter = $false; $VerifySubnetRouter = $false; $LanIPAddress = ''; $RuntimeReady = $false
+        Mock Invoke-JindaManagedScript { & $Work }
+        Mock Initialize-JindaTailscale {}
+        Mock Enable-JindaSubnetRouter {}
+    }
+    It 'forwards the explicit subnet-router option and local LAN address' {
+        $SubnetRouter = $true; $LanIPAddress = '192.168.40.20'
+        & $script:tailscaleEntry
+        Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter { ($ScriptArguments -join ' ') -eq '-SubnetRouter -LanIPAddress 192.168.40.20' }
+        Assert-MockCalled Enable-JindaSubnetRouter -Times 1 -Exactly -Scope It -ParameterFilter { -not $VerifyOnly -and $LanIPAddress -eq '192.168.40.20' }
+    }
+    It 'forwards verify-only mode without applying the normal preferences' {
+        $VerifySubnetRouter = $true
+        & $script:tailscaleEntry
+        Assert-MockCalled Invoke-JindaManagedScript -Times 1 -Exactly -Scope It -ParameterFilter { ($ScriptArguments -join ' ') -eq '-VerifySubnetRouter' }
+        Assert-MockCalled Enable-JindaSubnetRouter -Times 1 -Exactly -Scope It -ParameterFilter { $VerifyOnly }
+        Assert-MockCalled Initialize-JindaTailscale -Times 0 -Exactly -Scope It
+    }
+    It 'keeps ordinary setup free of subnet-router changes' {
+        & $script:tailscaleEntry
+        Assert-MockCalled Initialize-JindaTailscale -Times 1 -Exactly -Scope It
+        Assert-MockCalled Enable-JindaSubnetRouter -Times 0 -Exactly -Scope It
+    }
+    It 'rejects conflicting routing modes before any work' {
+        $SubnetRouter = $true; $VerifySubnetRouter = $true
+        { & $script:tailscaleEntry } | Should Throw 'not both'
+        Assert-MockCalled Invoke-JindaManagedScript -Times 0 -Exactly -Scope It
     }
 }
 

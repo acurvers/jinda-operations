@@ -426,7 +426,7 @@ of Windows PowerShell 5.1. Het installeert geen apps en voert geen Windows-inric
 
 Het script zet Tailscale-DNS en het accepteren van subnetroutes uit, wist de gekozen
 exit node en leest deze drie voorkeuren terug ter controle. Bij een nieuwe aanmelding
-opent het de officiële browseraanmelding: kies daar het tailnet van de opdrachtgever.
+opent het de officiële browseraanmelding: kies daar het bedoelde tailnet (je bestaande tailnet mag ook).
 Het wacht niet op het afronden van de aanmelding of apparaatgoedkeuring. Een bestaande
 aanmelding blijft behouden; het wisselt geen accounts en bevat geen aanmeldsleutels.
 De instellingen gelden voor het actieve Tailscale-profiel. Controleer ze opnieuw als
@@ -440,6 +440,53 @@ Offline tests: `Invoke-Pester .\tests\tailscale.Tests.ps1`; ze simuleren Tailsca
 services en browseraanmelding en veranderen de netwerkconfiguratie niet.
 
 Bron: [Tailscale CLI en voorkeuren](https://tailscale.com/docs/reference/tailscale-cli).
+
+### Subnetrouter voor alleen 192.168.40.13
+
+Voer op de aangemelde **tussenserver** de tweede startopdracht op de
+[Tailscale-pagina](https://acurvers.github.io/jinda-operations/tailscale.html) uit.
+Deze gebruikt de expliciete optie `-SubnetRouter`. Zonder die optie blijven de
+bestaande routeadvertenties en Windows-forwardinginstellingen onaangeroerd.
+
+De optie weigert uitvoering op 192.168.40.13 zelf en vereist een werkende
+Tailscale-aanmelding en een unieke rechtstreeks aangesloten IPv4-LAN-interface
+voor dat adres. Met `-LanIPAddress` kun je de juiste lokale LAN-adresbinding kiezen.
+Ze zet IPv4-forwarding aan op alleen de gekozen LAN- en Tailscale-interface.
+`Set-NetIPInterface` zonder PolicyStore schrijft actief en persistent; het script
+leest beide stores terug. Bestaande Tailscale-routeadvertenties blijven staan en
+`192.168.40.13/32` wordt zonder duplicaten toegevoegd. Tailscale krijgt in deze modus ook `--unattended=true`, zodat aanmelden bij Windows niet nodig is om de verbinding actief te houden. Geen extra Windows-route,
+nieuwe default gateway, exit node of wijziging aan Windows Firewall met geavanceerde
+beveiliging op de tussenserver. Reeds uitgevoerde stappen worden bij een latere
+fout niet automatisch teruggedraaid.
+
+Keur de route daarna goed in **Machines > tussenserver > Subnets / Edit route settings**
+en controleer **Access controls** voor toegang naar 192.168.40.13. Dit werkt ook in
+je bestaande tailnet; bestaande gebruikers/apparaten kunnen volgens het daar geldende
+beleid toegang krijgen. Het script wijzigt geen tailnetbeleid of routegoedkeuringen.
+Op de **beheer-pc** moet **Use Tailscale subnets** aan staan (`tailscale set --accept-routes=true`).
+Pas die uitzondering alleen toe waar je de klant-route wilt gebruiken. DNS/exit node
+kunnen uit blijven. Open vervolgens RDP naar 192.168.40.13.
+
+De tussenserver test TCP 3389 naar de doelserver. Een fout daarbij geeft een
+waarschuwing: controleer RDP en Windows Firewall met geavanceerde beveiliging op
+Server 2012, met toegang vanaf het getoonde LAN-IP van de tussenserver. De normale
+Tailscale-bronvertaling blijft behouden. Er worden geen services/adapters herstart.
+
+Controleer na een geplande netwerk-/systeemherstart met:
+
+```powershell
+.\configure-tailscale.ps1 -VerifySubnetRouter
+```
+
+Deze optie leest alleen de aanmelding, adapterbinding, actieve en persistente
+forwarding, advertentie en voorkeuren terug en test de RDP-poort. Bij ambiguïteit
+geef je ook `-LanIPAddress <LAN-IP-van-de-tussenserver>` mee. Een echte herstart,
+routegoedkeuring en RDP-verbinding vanaf de beheer-pc zijn lokaal niet getest;
+de offline tests simuleren deze onderdelen. De scriptlogs staan in de bestaande
+JindaOperations-logmap onder LOCALAPPDATA.
+
+Bronnen: [Tailscale-subnetrouters op Windows](https://tailscale.com/docs/features/subnet-routers?tab=windows),
+[Microsoft Set-NetIPInterface](https://learn.microsoft.com/en-us/powershell/module/nettcpip/set-netipinterface).
 
 ## Configuratie
 

@@ -8,9 +8,21 @@ Keeps the active account and other preferences. A new device opens its official
 browser sign-in page; setup does not wait for the user to finish signing in.
 No software installation or Windows Server 2012 configuration is performed.
 Requires a supported Windows version and a current installed Tailscale client.
+.PARAMETER SubnetRouter
+Opt in on the intermediary server: persist IPv4 forwarding on its Tailscale and
+directly connected LAN interfaces, and add the route 192.168.40.13/32.
+.PARAMETER VerifySubnetRouter
+Read-only verification of the subnet-router settings, for example after a reboot.
+.PARAMETER LanIPAddress
+Select the intermediary server's LAN IPv4 address when multiple candidates exist.
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
-param([switch]$RuntimeReady)
+param(
+    [switch]$RuntimeReady,
+    [switch]$SubnetRouter,
+    [switch]$VerifySubnetRouter,
+    [string]$LanIPAddress
+)
 
 # BEGIN shared runtime (kept identical in all entry scripts).
 function Test-JindaAdministrator {
@@ -252,7 +264,7 @@ function Initialize-JindaTailscale {
         $uri.Scheme -ne 'https' -or $uri.Host -ne 'login.tailscale.com' -or $uri.Port -ne 443 -or $uri.UserInfo -ne '') {
         throw 'Tailscale did not provide a valid official browser sign-in URL.'
     }
-    Write-Host 'Sign in in the browser and select the customer tailnet. Setup continues without waiting for sign-in.'
+    Write-Host 'Sign in in the browser and select the intended tailnet. Setup continues without waiting for sign-in.'
     if ([Environment]::UserInteractive -and (Get-Process -Id $PID).SessionId -ne 0) {
         try { Start-Process -FilePath $uri.AbsoluteUri -ErrorAction Stop | Out-Null }
         catch { Write-Warning "Could not open the browser. Open this sign-in URL yourself: $($uri.AbsoluteUri)" }
@@ -262,11 +274,138 @@ function Initialize-JindaTailscale {
 }
 # END Tailscale setup.
 
+function Test-JindaAddressInSubnet {
+    param([string]$Address, [string]$LocalAddress, [int]$PrefixLength)
+    $remote = [Net.IPAddress]::Parse($Address).GetAddressBytes()
+    $local = [Net.IPAddress]::Parse($LocalAddress).GetAddressBytes()
+    if ($remote.Length -ne 4 -or $local.Length -ne 4 -or $PrefixLength -lt 1 -or $PrefixLength -gt 30) { return $false }
+    for ($i = 0; $i -lt 4; $i++) {
+        $bits = [Math]::Min(8, [Math]::Max(0, $PrefixLength - 8 * $i))
+        $mask = if ($bits -eq 0) { 0 } else { (255 -shl (8 - $bits)) -band 255 }
+        if (($remote[$i] -band $mask) -ne ($local[$i] -band $mask)) { return $false }
+    }
+    return $true
+}
+
+function Get-JindaSubnetRouterPlan {
+    param([string]$Path, [string]$LanIPAddress)
+    $ErrorActionPreference = 'Stop'
+    $target = '192.168.40.13'
+    $status = Get-JindaTailscaleStatus $Path
+    if ($status.BackendState -ne 'Running') { throw 'Sign in to Tailscale first using the normal command, then run -SubnetRouter on the intermediary server.' }
+    $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.AddressState -eq 'Preferred' })
+    if ($addresses.IPAddress -contains $target) { throw 'Run this option on the intermediary Tailscale server, not on 192.168.40.13 itself.' }
+    $tailscale = @($addresses | Where-Object { $_.IPAddress -in @($status.TailscaleIPs) })
+    if ($tailscale.Count -ne 1) { throw 'Cannot identify exactly one active Tailscale IPv4 interface.' }
+    $lan = @($addresses | Where-Object {
+        $_.InterfaceIndex -ne $tailscale[0].InterfaceIndex -and
+        (Test-JindaAddressInSubnet -Address $target -LocalAddress $_.IPAddress -PrefixLength $_.PrefixLength)
+    })
+    if ($LanIPAddress) { $lan = @($lan | Where-Object { $_.IPAddress -eq $LanIPAddress }) }
+    if ($lan.Count -ne 1) { throw 'Cannot select a unique directly connected LAN for 192.168.40.13. Supply -LanIPAddress with the intermediary server LAN IP.' }
+    $route = @(Find-NetRoute -RemoteIPAddress $target -InterfaceIndex $lan[0].InterfaceIndex -LocalIPAddress $lan[0].IPAddress -ErrorAction Stop |
+        Where-Object { $_.PSObject.Properties['NextHop'] })
+    if ($route.Count -ne 1 -or $route[0].NextHop -ne '0.0.0.0' -or $route[0].InterfaceIndex -ne $lan[0].InterfaceIndex) {
+        throw '192.168.40.13 must be reachable directly through the selected LAN, not through another gateway or VPN.'
+    }
+    # Preflight both stores before applying any network settings.
+    $interfaces = @($tailscale[0], $lan[0])
+    foreach ($nic in $interfaces) {
+        foreach ($store in @('ActiveStore', 'PersistentStore')) {
+            $found = @(Get-NetIPInterface -AddressFamily IPv4 -InterfaceIndex $nic.InterfaceIndex -PolicyStore $store -ErrorAction Stop)
+            if ($found.Count -ne 1) { throw "Cannot inspect $store for interface $($nic.InterfaceAlias)." }
+        }
+    }
+    return [pscustomobject]@{ Target = $target; Prefix = "$target/32"; Lan = $lan[0]; Interfaces = $interfaces }
+}
+
+function Get-JindaTailscaleAdvertisedRoutes {
+    param([string]$Path)
+    $result = Invoke-JindaTailscaleCli $Path @('get', '--json')
+    if ($result.ExitCode -ne 0) { throw "Could not read existing Tailscale routes: $($result.Error)" }
+    $prefs = $result.Output | ConvertFrom-Json -ErrorAction Stop
+    if (-not $prefs.PSObject.Properties['advertise-routes'] -or $prefs.'advertise-routes' -isnot [string]) {
+        throw 'Cannot determine the existing advertised routes. Refusing to replace them.'
+    }
+    return @($prefs.'advertise-routes' -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Assert-JindaSubnetRouter {
+    param([string]$Path, $Plan)
+    foreach ($nic in $Plan.Interfaces) {
+        foreach ($store in @('ActiveStore', 'PersistentStore')) {
+            $value = @(Get-NetIPInterface -AddressFamily IPv4 -InterfaceIndex $nic.InterfaceIndex -PolicyStore $store -ErrorAction Stop)
+            if ($value.Count -ne 1 -or [string]$value[0].Forwarding -ne 'Enabled') {
+                throw "IPv4 forwarding is not enabled in $store on $($nic.InterfaceAlias)."
+            }
+            Write-Host "IPv4 forwarding verified: $($nic.InterfaceAlias), $store."
+        }
+    }
+    if ($Plan.Prefix -notin @(Get-JindaTailscaleAdvertisedRoutes $Path)) { throw "Tailscale is not advertising $($Plan.Prefix)." }
+    $result = Invoke-JindaTailscaleCli $Path @('get', '--json')
+    if ($result.ExitCode -ne 0) { throw 'Cannot inspect Tailscale unattended mode.' }
+    $prefs = $result.Output | ConvertFrom-Json -ErrorAction Stop
+    if ($prefs.'unattended' -isnot [bool] -or -not $prefs.'unattended') { throw 'Tailscale unattended mode is not enabled for the subnet router.' }
+    Assert-JindaTailscalePreferences $Path
+    Write-Host "Tailscale route advertisement verified: $($Plan.Prefix)."
+}
+
+function Test-JindaSubnetTargetRdp {
+    param([string]$Address, [string]$LocalAddress)
+    $client = New-Object Net.Sockets.TcpClient
+    try {
+        $endpoint = New-Object Net.IPEndPoint([Net.IPAddress]::Parse($LocalAddress), 0)
+        $client.Client.Bind($endpoint)
+        return ($client.ConnectAsync($Address, 3389).Wait(3000) -and $client.Connected)
+    }
+    catch { return $false }
+    finally { $client.Dispose() }
+}
+
+function Enable-JindaSubnetRouter {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([string]$LanIPAddress, [switch]$VerifyOnly)
+    if (-not $PSCmdlet.ShouldProcess('This intermediary Tailscale server', 'Configure or verify forwarding and the 192.168.40.13/32 route')) { return }
+    $ErrorActionPreference = 'Stop'
+    $path = Get-JindaTailscaleCliPath
+    $plan = Get-JindaSubnetRouterPlan -Path $path -LanIPAddress $LanIPAddress
+    $existing = @(Get-JindaTailscaleAdvertisedRoutes $path)
+    if (-not $VerifyOnly) {
+        Initialize-JindaTailscale
+        Write-Host "Subnet router on $($env:COMPUTERNAME): LAN $($plan.Lan.InterfaceAlias) ($($plan.Lan.IPAddress)); add $($plan.Prefix)."
+        foreach ($nic in $plan.Interfaces) {
+            # Omitting PolicyStore updates both active and persistent interface
+            # configuration. Explicit ActiveStore alone would be temporary.
+            Set-NetIPInterface -AddressFamily IPv4 -InterfaceIndex $nic.InterfaceIndex -Forwarding Enabled -ErrorAction Stop
+        }
+        $routes = @(($existing + @($plan.Prefix)) | Select-Object -Unique)
+        $result = Invoke-JindaTailscaleCli $path @('set', ('--advertise-routes=' + ($routes -join ',')), '--unattended=true')
+        if ($result.ExitCode -ne 0) { throw "Could not advertise the subnet route: $($result.Error)" }
+    }
+    Assert-JindaSubnetRouter -Path $path -Plan $plan
+    if (Test-JindaSubnetTargetRdp -Address $plan.Target -LocalAddress $plan.Lan.IPAddress) {
+        Write-Host "LAN TCP 3389 to $($plan.Target) is reachable from this intermediary server."
+    } else {
+        Write-Warning "LAN TCP 3389 to $($plan.Target) is not reachable. Check RDP and Windows Firewall with Advanced Security on $($plan.Target), allowing source $($plan.Lan.IPAddress)."
+    }
+    Write-Host 'Next: approve 192.168.40.13/32 for this machine in the Tailscale admin console; review tailnet access rules.'
+    Write-Host 'On the management PC: enable Use Tailscale subnets (accept-routes=true), then connect RDP to 192.168.40.13.'
+    Write-Host 'No adapter, service or server was restarted. Verify persistence after a planned restart using -VerifySubnetRouter.'
+}
+
 # Dot-sourcing defines functions only, for offline tests.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
-            Initialize-JindaTailscale
+        if ($SubnetRouter -and $VerifySubnetRouter) { throw 'Choose -SubnetRouter or -VerifySubnetRouter, not both.' }
+        if ($LanIPAddress -and -not ($SubnetRouter -or $VerifySubnetRouter)) { throw 'LanIPAddress is only used with a subnet-router option.' }
+        $forwardArguments = @()
+        if ($SubnetRouter) { $forwardArguments += '-SubnetRouter' }
+        if ($VerifySubnetRouter) { $forwardArguments += '-VerifySubnetRouter' }
+        if ($LanIPAddress) { $forwardArguments += @('-LanIPAddress', $LanIPAddress) }
+        $exitCode = Invoke-JindaManagedScript -ScriptPath $PSCommandPath -ScriptArguments $forwardArguments -RuntimeReady:$RuntimeReady -WhatIf:$WhatIfPreference -Work {
+            if ($SubnetRouter -or $VerifySubnetRouter) {
+                Enable-JindaSubnetRouter -LanIPAddress $LanIPAddress -VerifyOnly:$VerifySubnetRouter
+            } else { Initialize-JindaTailscale }
             return 0
         }
         exit $exitCode
