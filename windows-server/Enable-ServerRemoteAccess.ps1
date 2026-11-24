@@ -6,19 +6,24 @@ Enable selected RDP, Windows PowerShell remoting and IPv4 ping on Server 2012/R2
 Collects all choices before applying settings. Uses native 64-bit Windows
 PowerShell, including when launched from an x86 console. No apps, language,
 account/password policies, routing or client TrustedHosts configuration.
-Windows Firewall with Advanced Security on the target server: scopes the
-selected built-in inbound rules to one local IPv4 interface and allowed sources.
+Always asks before configuring Windows Firewall with Advanced Security on the
+target server (default No). With No, skips all rule checks/changes and ping setup;
+existing WinRM is only checked, never reconfigured. With Yes, scopes the selected
+built-in inbound rules to one local IPv4 interface and allowed sources.
 Existing custom rules and centrally managed rules are not rewritten.
 .PARAMETER RemoteDesktop
 Ask, Yes or No. No skips configuration; it does not disable existing RDP.
 .PARAMETER WinRM
 Ask, Yes or No. Uses the existing Windows PowerShell endpoint, not PowerShell 7.
-Enabling remoting can restart WinRM and interrupt existing WinRM sessions.
+With Windows Firewall configuration selected, enabling remoting can restart WinRM
+and interrupt existing WinRM sessions. Otherwise only checks the existing listener.
 .PARAMETER Ping
-Ask, Yes or No. Enables a dedicated inbound ICMPv4 echo rule.
+Ask, Yes or No. Enables a dedicated inbound ICMPv4 echo rule only when Windows
+Firewall with Advanced Security on the target server is selected for configuration.
 .PARAMETER AllowedRemoteAddresses
 Explicit IPv4 addresses/subnets, for example 192.168.40.0/24,10.6.0.3.
-When omitted, asks at startup with the selected LAN subnet as the default.
+When rule configuration is selected and sources are omitted, asks at startup with
+the selected LAN subnet as the default. Unused when rule configuration is skipped.
 .EXAMPLE
 .\Enable-ServerRemoteAccess.ps1 -RemoteDesktop Yes -WinRM Yes -Ping Yes -LanIPAddress 192.168.40.20 -AllowedRemoteAddresses 192.168.40.0/24,10.6.0.3
 #>
@@ -44,11 +49,13 @@ function Get-ServerNativePowerShell {
 }
 
 function Read-ServerYesNo {
-    param([string]$Prompt, [string]$Choice = 'Ask')
+    param([string]$Prompt, [string]$Choice = 'Ask', [bool]$DefaultYes = $true)
     if ($Choice -ne 'Ask') { return ($Choice -eq 'Yes') }
     while ($true) {
-        $answer = ([string](Read-Host "$Prompt (N = skip; leave existing settings unchanged) [Y/n]")).Trim().ToLowerInvariant()
-        if ($answer -in @('', 'y', 'yes', 'j', 'ja')) { return $true }
+        $hint = if ($DefaultYes) { '[Y/n]' } else { '[y/N]' }
+        $answer = ([string](Read-Host "$Prompt (N = skip; leave existing settings unchanged) $hint")).Trim().ToLowerInvariant()
+        if ($answer -eq '') { return $DefaultYes }
+        if ($answer -in @('y', 'yes', 'j', 'ja')) { return $true }
         if ($answer -in @('n', 'no', 'nee')) { return $false }
         Write-Host 'Please enter y or n.'
     }
@@ -115,8 +122,23 @@ function Select-ServerLan {
 }
 
 function Get-ServerAccessPlan {
-    param($Lan, [string[]]$Sources, [bool]$Rdp, [bool]$Remoting, [bool]$Echo)
+    param($Lan, [string[]]$Sources, [bool]$Rdp, [bool]$Remoting, [bool]$Echo, [bool]$ConfigureFirewall = $true)
     $ErrorActionPreference = 'Stop'
+    $port = 3389
+    if ($Rdp) {
+        $rdpPolicy = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -ErrorAction SilentlyContinue
+        if ($rdpPolicy -and $rdpPolicy.PSObject.Properties['fDenyTSConnections'] -and $rdpPolicy.fDenyTSConnections -eq 1) {
+            throw 'Remote Desktop is denied by policy. Review central policy first.'
+        }
+        $port = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name PortNumber).PortNumber
+        if ($port -lt 1 -or $port -gt 65535) { throw 'Invalid existing RDP port.' }
+    }
+    if (-not $ConfigureFirewall) {
+        return [pscustomobject]@{
+            Lan = $null; Sources = @(); ConfigureFirewall = $false
+            Rdp = $Rdp; Remoting = $Remoting; Echo = $false; RdpPort = $port; Rules = @(); Patterns = @()
+        }
+    }
     $profiles = @(Get-NetConnectionProfile -InterfaceIndex $Lan.InterfaceIndex)
     if ($profiles.Count -ne 1) { throw 'Cannot identify a unique network profile for the selected LAN.' }
     $profile = if ($profiles[0].NetworkCategory -eq 'DomainAuthenticated') { 'Domain' } else { [string]$profiles[0].NetworkCategory }
@@ -135,10 +157,6 @@ function Get-ServerAccessPlan {
         foreach ($name in @('RemoteDesktop-UserMode-In-TCP', 'RemoteDesktop-UserMode-In-UDP')) {
             if ($name -notin $rules.Name) { throw "Missing built-in Windows Firewall rule on this server: $name" }
         }
-        $rdpPolicy = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -ErrorAction SilentlyContinue
-        if ($rdpPolicy -and $rdpPolicy.PSObject.Properties['fDenyTSConnections'] -and $rdpPolicy.fDenyTSConnections -eq 1) {
-            throw 'Remote Desktop is denied by policy. Review central policy first.'
-        }
     }
     if ($Remoting -and @($rules | Where-Object { $_.Name -like 'WINRM-HTTP-In-TCP*' }).Count -eq 0) {
         throw 'Missing built-in WinRM HTTP rules in Windows Firewall with Advanced Security on this server.'
@@ -151,19 +169,15 @@ function Get-ServerAccessPlan {
             throw "Windows Firewall rule on this server is centrally managed: $name"
         }
     }
-    $port = 3389
-    if ($Rdp) {
-        $port = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name PortNumber).PortNumber
-        if ($port -lt 1 -or $port -gt 65535) { throw 'Invalid existing RDP port.' }
-    }
     return [pscustomobject]@{
-        Lan = $Lan; Sources = @(ConvertTo-ServerAllowedAddresses $Sources)
+        Lan = $Lan; Sources = @(ConvertTo-ServerAllowedAddresses $Sources); ConfigureFirewall = $true
         Rdp = $Rdp; Remoting = $Remoting; Echo = $Echo; RdpPort = $port; Rules = $rules; Patterns = $patterns
     }
 }
 
 function Set-ServerRuleScope {
     param($Plan)
+    if (-not $Plan.ConfigureFirewall) { return }
     foreach ($rule in $Plan.Rules) {
         Set-NetFirewallRule -PolicyStore PersistentStore -Name $rule.Name -Profile Any `
             -InterfaceAlias $Plan.Lan.InterfaceAlias -LocalAddress $Plan.Lan.IPAddress `
@@ -195,9 +209,21 @@ function ConvertTo-ServerCanonicalAddress {
 function Invoke-ServerAccessPlan {
     param($Plan)
     $ErrorActionPreference = 'Stop'
-    # Scope existing built-in Windows Firewall rules before enabling access.
-    Set-ServerRuleScope $Plan
-    if ($Plan.Remoting) {
+    # Only scope rules when Windows Firewall with Advanced Security on this
+    # target server was explicitly selected. Enable-PSRemoting also changes rules.
+    if ($Plan.ConfigureFirewall) { Set-ServerRuleScope $Plan }
+    if ($Plan.Remoting -and -not $Plan.ConfigureFirewall) {
+        Write-Host ''
+        Write-Host 'Leaving existing WinRM configuration unchanged; Windows Firewall with Advanced Security on this server was skipped.'
+        try {
+            Test-WSMan -ComputerName localhost -ErrorAction Stop | Out-Null
+            Write-Host 'The local WinRM listener responds. Remote PowerShell sign-in has not been verified.'
+        }
+        catch {
+            Write-Warning 'The local WinRM listener could not be verified. No WinRM configuration was changed; continuing with the other selected steps.'
+        }
+    }
+    if ($Plan.Remoting -and $Plan.ConfigureFirewall) {
         Write-Host ''
         Write-Host 'Enabling Windows PowerShell remoting on HTTP/TCP 5985...'
         try {
@@ -222,15 +248,17 @@ function Invoke-ServerAccessPlan {
     if ($Plan.Rdp) {
         Write-Host ''
         Write-Host "Enabling Remote Desktop with NLA on existing port $($Plan.RdpPort)..."
-        foreach ($protocol in @('TCP', 'UDP')) {
-            Set-NetFirewallRule -PolicyStore PersistentStore -Name "RemoteDesktop-UserMode-In-$protocol" -Enabled True -Protocol $protocol -LocalPort $Plan.RdpPort | Out-Null
+        if ($Plan.ConfigureFirewall) {
+            foreach ($protocol in @('TCP', 'UDP')) {
+                Set-NetFirewallRule -PolicyStore PersistentStore -Name "RemoteDesktop-UserMode-In-$protocol" -Enabled True -Protocol $protocol -LocalPort $Plan.RdpPort | Out-Null
+            }
         }
         Set-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
         Set-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -Value 1
         Set-Service -Name TermService -StartupType Automatic
         Start-Service -Name TermService
     }
-    if ($Plan.Echo) {
+    if ($Plan.Echo -and $Plan.ConfigureFirewall) {
         Write-Host ''
         Write-Host 'Enabling IPv4 ping from the allowed sources...'
         $settings = @{
@@ -246,8 +274,11 @@ function Invoke-ServerAccessPlan {
         }
     }
     # Read the effective rules, rather than reporting only saved configuration.
-    $names = @($Plan.Rules | ForEach-Object { $_.Name })
-    if ($Plan.Echo) { $names += 'Jinda-Server-ICMPv4-In' }
+    $names = @()
+    if ($Plan.ConfigureFirewall) {
+        $names = @($Plan.Rules | ForEach-Object { $_.Name })
+        if ($Plan.Echo) { $names += 'Jinda-Server-ICMPv4-In' }
+    }
     foreach ($name in $names) {
         $rule = Get-NetFirewallRule -PolicyStore ActiveStore -Name $name -ErrorAction Stop
         $filter = Get-ServerRuleAddressFilter $rule
@@ -264,10 +295,11 @@ function Invoke-ServerAccessPlan {
         Write-Host ("Windows Firewall on {0}: {1}; local={2}; sources={3}" -f $env:COMPUTERNAME, $name, ($filter.LocalAddress -join ','), ($filter.RemoteAddress -join ','))
     }
     Write-Host ''
-    Write-Host 'Selected settings applied. No server reboot was requested.'
+    Write-Host 'Selected setup steps finished. Skipped settings were left unchanged. No server reboot was requested.'
     Write-Host 'Test access from your management PC. Other custom/central rules can also affect access.'
     if ($Plan.Remoting) {
-        Write-Host "WinRM: Enter-PSSession -ComputerName $($Plan.Lan.IPAddress) -ConfigurationName Microsoft.PowerShell -Authentication Negotiate -Credential (Get-Credential)"
+        $target = if ($Plan.Lan) { $Plan.Lan.IPAddress } else { $env:COMPUTERNAME }
+        Write-Host "WinRM: Enter-PSSession -ComputerName $target -ConfigurationName Microsoft.PowerShell -Authentication Negotiate -Credential (Get-Credential)"
         Write-Host 'Use an existing authorized Windows account; client TrustedHosts/HTTPS is a separate configuration.'
     }
 }
@@ -302,10 +334,21 @@ function Start-ServerRemoteAccess {
     $rdp = Read-ServerYesNo 'Enable Remote Desktop (RDP)?' $Options.RemoteDesktop
     $remoting = Read-ServerYesNo 'Enable Windows PowerShell remoting (WinRM)?' $Options.WinRM
     $echo = Read-ServerYesNo 'Allow IPv4 ping?' $Options.Ping
+    Write-Host 'Skipping Windows Firewall with Advanced Security on this server also skips ping setup and leaves WinRM configuration unchanged.'
+    $configureFirewall = Read-ServerYesNo 'Configure Windows Firewall with Advanced Security on this server?' -DefaultYes $false
     if (-not $rdp -and -not $remoting -and -not $echo) { Write-Host 'All components skipped.'; return }
-    $lan = Select-ServerLan $Options.LanIPAddress
-    $sources = $Options.AllowedRemoteAddresses
-    if (-not $sources) {
+    if (-not $configureFirewall) {
+        Write-Host 'Windows Firewall with Advanced Security on this server: all rule checks and changes skipped; existing rules are unchanged.'
+        if ($echo) { Write-Host 'IPv4 ping setup skipped because it only configures a Windows Firewall rule on this server.' }
+        if (-not $rdp -and -not $remoting) { return }
+    }
+    $lan = $null
+    $sources = @()
+    if ($configureFirewall) {
+        $lan = Select-ServerLan $Options.LanIPAddress
+        $sources = $Options.AllowedRemoteAddresses
+    }
+    if ($configureFirewall -and -not $sources) {
         $subnet = Get-ServerSubnet $lan.IPAddress $lan.PrefixLength
         Write-Host "Selected LAN: $($lan.InterfaceAlias) - $($lan.IPAddress)/$($lan.PrefixLength)"
         Write-Host 'Standard Windows Firewall rules on this server will use these sources. Include your management/VPN IP if it is outside this LAN.'
@@ -316,8 +359,10 @@ function Start-ServerRemoteAccess {
             catch { Write-Host $_.Exception.Message -ForegroundColor Yellow }
         }
     }
-    $plan = Get-ServerAccessPlan -Lan $lan -Sources $sources -Rdp $rdp -Remoting $remoting -Echo $echo
-    Write-Host ("Setup choices: RDP={0}; WinRM={1}; Ping={2}; server={3}; allowed={4}" -f $rdp, $remoting, $echo, $lan.IPAddress, ($plan.Sources -join ', '))
+    $plan = Get-ServerAccessPlan -Lan $lan -Sources $sources -Rdp $rdp -Remoting $remoting -Echo $echo -ConfigureFirewall $configureFirewall
+    $target = if ($lan) { $lan.IPAddress } else { $env:COMPUTERNAME }
+    $winrmMode = if (-not $remoting) { 'skip' } elseif ($configureFirewall) { 'configure' } else { 'check existing only' }
+    Write-Host ("Setup choices: RDP={0}; WinRM={1}; Ping={2}; Windows Firewall with Advanced Security={3}; server={4}; allowed={5}" -f $rdp, $winrmMode, $plan.Echo, $configureFirewall, $target, ($plan.Sources -join ', '))
     $logDirectory = Join-Path $env:LOCALAPPDATA 'JindaOperations\Logs'
     $null = New-Item -ItemType Directory -Path $logDirectory -Force
     $log = Join-Path $logDirectory ('server-remote-access-{0}-{1}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID)

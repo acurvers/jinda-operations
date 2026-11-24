@@ -27,6 +27,11 @@ Describe 'Server 2012 input and compatibility' {
         Read-ServerYesNo 'WinRM?' 'No' | Should Be $false
         Assert-MockCalled Read-Host -Times 0 -Exactly -Scope It
     }
+    It 'defaults the separate Windows Firewall choice on the target server to No' {
+        Mock Read-Host { '' }
+        Read-ServerYesNo 'Configure Windows Firewall with Advanced Security on this server?' -DefaultYes $false | Should Be $false
+        Assert-MockCalled Read-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Prompt -like '*[[]y/N[]]*' }
+    }
     It 'has no post-PowerShell-3 syntax or dependencies in the server entry point' {
         $text = [IO.File]::ReadAllText((Join-Path $root 'windows-server\Enable-ServerRemoteAccess.ps1'))
         $text | Should Match '#Requires -Version 3.0'
@@ -82,6 +87,51 @@ Describe 'Server 2012 preflight' {
         Mock Get-ItemProperty { [pscustomobject]@{ fDenyTSConnections = 1 } }
         { Get-ServerAccessPlan $lan @('192.168.40.0/24') $true $false $false } | Should Throw 'denied by policy'
     }
+    It 'skips every Windows Firewall preflight on the target server when not selected' {
+        Mock Get-NetConnectionProfile { throw 'Windows network profile probe must be skipped' }
+        Mock Get-NetFirewallProfile { throw 'Windows Firewall profile probe must be skipped' }
+        Mock Get-NetFirewallRule { throw 'Windows Firewall rule probe must be skipped' }
+        $plan = Get-ServerAccessPlan -Lan $null -Sources @('Any') -Rdp $true -Remoting $true -Echo $true -ConfigureFirewall $false
+        $plan.ConfigureFirewall | Should Be $false
+        $plan.RdpPort | Should Be 3390
+        $plan.Echo | Should Be $false
+        $plan.Sources.Count | Should Be 0
+        Assert-MockCalled Get-NetConnectionProfile -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetFirewallProfile -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetFirewallRule -Times 0 -Exactly -Scope It
+    }
+}
+
+Describe 'Server 2012 asks about Windows Firewall on every run' {
+    BeforeEach {
+        Mock Test-ServerAdministrator { $true }
+        Mock Get-CimInstance { [pscustomobject]@{ ProductType = 3; Version = '6.2.9200'; Caption = 'Windows Server 2012' } }
+        Mock Read-Host { 'n' }
+        Mock Select-ServerLan { throw 'LAN selection must be skipped' }
+        Mock Get-ItemProperty {
+            if ($LiteralPath -like '*Policies*') { return $null }
+            [pscustomobject]@{ PortNumber = 3390 }
+        }
+        Mock New-Item {}
+        Mock Start-Transcript {}
+        Mock Stop-Transcript {}
+        Mock Invoke-ServerAccessPlan {}
+    }
+    It 'still asks on each invocation when RDP, WinRM and ping choices are explicit' {
+        $options = @{ RemoteDesktop = 'Yes'; WinRM = 'No'; Ping = 'No'; RuntimeReady = $true }
+        Start-ServerRemoteAccess -Options $options -ScriptPath 'server.ps1'
+        Start-ServerRemoteAccess -Options $options -ScriptPath 'server.ps1'
+        Assert-MockCalled Read-Host -Times 2 -Exactly -Scope It -ParameterFilter { $Prompt -like '*Configure Windows Firewall with Advanced Security on this server?*' }
+        Assert-MockCalled Select-ServerLan -Times 0 -Exactly -Scope It
+        Assert-MockCalled Invoke-ServerAccessPlan -Times 2 -Exactly -Scope It -ParameterFilter { -not $Plan.ConfigureFirewall -and -not $Plan.Remoting }
+    }
+    It 'skips ping-only setup without creating logs when Windows Firewall on the target server is skipped' {
+        $options = @{ RemoteDesktop = 'No'; WinRM = 'No'; Ping = 'Yes'; RuntimeReady = $true }
+        Start-ServerRemoteAccess -Options $options -ScriptPath 'server.ps1'
+        Assert-MockCalled Invoke-ServerAccessPlan -Times 0 -Exactly -Scope It
+        Assert-MockCalled New-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Start-Transcript -Times 0 -Exactly -Scope It
+    }
 }
 
 Describe 'Server 2012 apply using simulated Windows services' {
@@ -90,6 +140,7 @@ Describe 'Server 2012 apply using simulated Windows services' {
         [pscustomobject]@{
             Lan = [pscustomobject]@{ IPAddress = '192.168.40.20'; InterfaceAlias = 'Ethernet' }
             Sources = @('192.168.40.0/24', '10.6.0.3'); Rdp = $Rdp; Remoting = $Remoting; Echo = $Echo; RdpPort = 3390
+            ConfigureFirewall = $true
             Rules = @(); Patterns = @('WINRM-HTTP-In-TCP*')
         }
     }
@@ -135,6 +186,44 @@ Describe 'Server 2012 apply using simulated Windows services' {
     It 'fails when effective Windows Firewall sources on the server are broader than requested' {
         Mock Get-ServerRuleAddressFilter { [pscustomobject]@{ LocalAddress = @('192.168.40.20'); RemoteAddress = @('0.0.0.0/0') } }
         { Invoke-ServerAccessPlan (New-TestServerPlan $false $true $false) } | Should Throw 'differ from the plan'
+    }
+    It 'leaves existing WinRM and all Windows Firewall configuration on the target server unchanged when skipped' {
+        Mock Get-NetFirewallRule { throw 'Unexpected Windows Firewall read' }
+        Mock Set-NetFirewallRule { throw 'Unexpected Windows Firewall write' }
+        Mock New-NetFirewallRule { throw 'Unexpected Windows Firewall write' }
+        Mock Set-ServerRuleScope { throw 'Unexpected Windows Firewall scope change' }
+        Mock Enable-PSRemoting { throw 'Must not implicitly configure Windows Firewall' }
+        Mock Get-ServerRuleAddressFilter { throw 'Unexpected Windows Firewall verification' }
+        $plan = New-TestServerPlan $true $true $true
+        $plan.ConfigureFirewall = $false
+        Invoke-ServerAccessPlan $plan
+        Assert-MockCalled Test-WSMan -Times 1 -Exactly -Scope It
+        Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-Service -Times 0 -Exactly -Scope It -ParameterFilter { $Name -eq 'WinRM' }
+        Assert-MockCalled Set-Item -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled New-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetFirewallRule -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-ServerRuleAddressFilter -Times 0 -Exactly -Scope It
+        Assert-MockCalled Set-ItemProperty -Times 2 -Exactly -Scope It
+    }
+    It 'continues RDP setup when the unchanged existing WinRM listener does not respond' {
+        Mock Test-WSMan { throw 'Existing listener unavailable' }
+        Mock Enable-PSRemoting { throw 'Must not configure WinRM in skip mode' }
+        $plan = New-TestServerPlan $true $true $false
+        $plan.ConfigureFirewall = $false
+        Invoke-ServerAccessPlan $plan
+        Assert-MockCalled Set-ItemProperty -Times 2 -Exactly -Scope It
+        Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetFirewallRule -Times 0 -Exactly -Scope It
+    }
+    It 'does not even probe existing WinRM when WinRM itself is skipped' {
+        $plan = New-TestServerPlan $true $false $false
+        $plan.ConfigureFirewall = $false
+        Invoke-ServerAccessPlan $plan
+        Assert-MockCalled Test-WSMan -Times 0 -Exactly -Scope It
+        Assert-MockCalled Enable-PSRemoting -Times 0 -Exactly -Scope It
+        Assert-MockCalled Get-NetFirewallRule -Times 0 -Exactly -Scope It
     }
 }
 

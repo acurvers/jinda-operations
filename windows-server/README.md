@@ -2,13 +2,13 @@
 
 **Auteur** Codex (AI)
 
-**Model** GPT-6.1-sol
+**Model** Onbekend
 
 **Datum** 2026-11-24
 
 **Doel** Alleen toegang op afstand inrichten op een bestaande Windows Server 2012/R2
 
-**Onderwerp** RDP, WinRM en IPv4-ping met Windows PowerShell 3.0
+**Onderwerp** RDP, bestaand WinRM en optionele Windows Firewall-regelconfiguratie op de doelserver met Windows PowerShell 3.0
 
 Start via [de Server-webpagina](https://acurvers.github.io/jinda-operations/windows-server.html).
 Deze bevat één kopieerbare opdracht die `windows-server.zip` downloadt, de SHA-256
@@ -16,10 +16,14 @@ controleert en het script start. TLS 1.2 wordt voor die download ingeschakeld;
 certificaatcontrole blijft aan. Geen WinGet, PowerShell-upgrade of extra modules.
 
 Het script schakelt zo nodig van x86 naar de ingebouwde 64-bits Windows PowerShell
-en vraagt administratorrechten. Alle keuzes staan aan het begin: RDP, WinRM, ping,
-de LAN-adapter (bij meerdere adressen) en toegestane IPv4-adressen/subnetten.
-Enter kiest bij de drie onderdelen Yes. No slaat het onderdeel over en schakelt
-bestaande toegang niet uit. De standaardbron is het gekozen LAN-subnet. Voeg
+en vraagt administratorrechten. Alle keuzes staan aan het begin: RDP, WinRM, ping
+en bij iedere uitvoering een aparte vraag over **Windows Firewall met geavanceerde
+beveiliging op de doelserver**, standaard **No**. Deze vraag blijft komen wanneer
+RDP, WinRM en ping via parameters zijn ingevuld. De keuze wordt niet onthouden.
+Alleen bij Yes volgen de LAN-adapter (bij meerdere adressen) en toegestane
+IPv4-adressen/subnetten. Enter kiest bij de eerste drie onderdelen Yes. No slaat
+het onderdeel over en schakelt bestaande toegang niet uit. De standaardbron bij
+regelconfiguratie is het gekozen LAN-subnet. Voeg
 beheer- of VPN-adressen uit andere subnetten zelf toe in dezelfde vraag.
 
 Vooraf ingevulde keuzes, bijvoorbeeld:
@@ -37,11 +41,19 @@ Bypass -File <pad>`. `-WhatIf` voert geen inrichting, elevatie of logaanmaak uit
 | Onderdeel | Gedrag |
 | --- | --- |
 | RDP | Bestaande RDP-poort, TCP/UDP, NLA aan; TermService automatisch starten, geen serviceherstart |
-| WinRM | Ingebouwde Windows PowerShell-remoting op HTTP/TCP 5985; Basic en AllowUnencrypted uit; kan WinRM herstarten |
-| Ping | Eigen inkomende ICMPv4 echo-regel, type 8 |
-| Windows Firewall met geavanceerde beveiliging op de doelserver | Geselecteerde standaardregels en eigen pingregel: alle netwerkprofielen, alleen gekozen interface/lokaal IPv4 en opgegeven bronadressen |
+| WinRM | Bij regelconfiguratie Yes: ingebouwde Windows PowerShell-remoting op HTTP/TCP 5985; Basic en AllowUnencrypted uit; kan WinRM herstarten. Bij No: bestaande WinRM-inrichting blijft volledig staan; alleen een geselecteerde lokale listenercontrole. WinRM zelf op No slaat ook die controle over. |
+| Ping | Alleen bij regelconfiguratie Yes: eigen inkomende ICMPv4 echo-regel, type 8. Bij No wordt pingconfiguratie overgeslagen. |
+| Windows Firewall met geavanceerde beveiliging op de doelserver | Elke run een aparte keuze, standaard No. No slaat alle profiel-/regelcontroles en regelwijzigingen over; Yes begrenst de geselecteerde standaardregels en eigen pingregel tot gekozen interface/lokaal IPv4 en opgegeven bronnen. |
 
-Het script controleert vooraf de Server-versie, de gekozen adapter, actieve
+Bij No voor Windows Firewall met geavanceerde beveiliging op de doelserver gebruikt
+het script ook geen `Enable-PSRemoting`, omdat die opdracht zelf regels wijzigt.
+Een ontbrekende reactie op de optionele lokale WinRM-controle geeft dan een melding
+en blokkeert RDP-configuratie niet. Een antwoord van de listener bewijst nog geen
+geslaagde remote PowerShell-aanmelding. Bestaande regels en diensten kunnen externe
+toegang nog steeds blokkeren; No schakelt Windows Firewall niet uit.
+
+Het script controleert vooraf de Server-versie en het bestaande RDP-beleid/-poort.
+Alleen bij regelconfiguratie Yes controleert het ook de gekozen adapter, actieve
 Windows Firewall-profielinstellingen op de doelserver en centraal beheerde regels.
 Een beleidsconflict stopt de inrichting. Andere custom regels blijven bestaan en
 kunnen dus extra toegang toestaan of blokkeren. Het script is geen volledige
