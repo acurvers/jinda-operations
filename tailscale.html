@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jinda Operations — Tailscale instellen</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #16312c; background: #f3f6f3; }
+    body { max-width: 900px; margin: 48px auto; padding: 0 24px; line-height: 1.65; }
+    h1 { font-size: 2.2rem; line-height: 1.2; }
+    a { color: #14634f; }
+    code { font-family: Consolas, monospace; }
+    .command-row { display: flex; align-items: flex-start; border: 1px solid #d5dfd8; border-radius: 8px; background: white; }
+    pre { flex: 1; min-width: 0; margin: 0; padding: 18px; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    button { flex: 0 0 44px; height: 44px; margin: 8px; border: 1px solid #d5dfd8; border-radius: 6px; color: #14634f; background: #f3f6f3; cursor: pointer; }
+    button:hover { background: #e3eee6; border-color: #14634f; }
+    button:focus { outline: 2px solid #14634f; }
+    #copy-status { min-height: 1.5em; margin-top: 4px; }
+    footer { margin-top: 32px; border-top: 1px solid #d5dfd8; padding-top: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tailscale apart instellen</h1>
+    <p>Installeer eerst de actuele <a href="https://tailscale.com/download/windows">Tailscale-client</a> op de bedoelde pc of server. Voer daarna deze regel uit in PowerShell. Geschikt voor Windows 10/11 en Server 2016 of nieuwer, met Windows PowerShell 5.1 of PowerShell 7.</p>
+    <div class="command-row">
+      <pre><code id="tailscale-code">&amp; { $ErrorActionPreference = &quot;Stop&quot;; [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $p = Join-Path $env:TEMP (&quot;jinda-tailscale-&quot; + [guid]::NewGuid().ToString(&quot;N&quot;) + &quot;.ps1&quot;); iwr &quot;https://raw.githubusercontent.com/acurvers/jinda-operations/main/configure-tailscale.ps1&quot; -UseBasicParsing -OutFile $p -TimeoutSec 60; if ((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne &quot;5db44d7bf55cd109fd9ccf56c7d16bb9112a21b06496ff0d66954c7c2dab3298&quot;) { throw &quot;Checksum mismatch. Copy the current command from the Tailscale webpage.&quot; }; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p }</code></pre>
+      <button id="copy-command" type="button" aria-label="Kopieer PowerShell-opdracht" title="Kopieer PowerShell-opdracht">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"></rect><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path></svg>
+      </button>
+    </div>
+    <p id="copy-status" role="status" aria-live="polite"></p>
+    <p>Het script vraagt zo nodig administratorrechten en stelt in: <strong>Tailscale-DNS uit, subnetroutes accepteren uit, geen exit node</strong>. Deze voorkeuren worden gecontroleerd.</p>
+    <p>Als aanmelden nodig is, opent de officiële browseraanmelding. Kies het <strong>tailnet van de opdrachtgever</strong>. Het script wacht daar niet op. Een bestaande aanmelding blijft behouden; gebruik de Tailscale-app als je bewust naar een ander account wilt wisselen.</p>
+    <p>Dit losse script installeert geen software en voert geen Windows-inrichting uit. Het is niet voor de Server 2012-machine. Op een beheer-pc die klant-subnetroutes nodig heeft, moet het accepteren van die routes juist aan blijven.</p>
+  </main>
+  <footer><a href="https://github.com/acurvers/jinda-operations/blob/main/configure-tailscale.ps1">Scriptbron</a> · <a href="./">Windows-inrichting</a></footer>
+  <script>
+    (function () {
+      var button = document.getElementById('copy-command');
+      var status = document.getElementById('copy-status');
+      function fallback(text) {
+        var field = document.createElement('textarea');
+        field.value = text; field.style.position = 'fixed'; field.style.opacity = '0';
+        document.body.appendChild(field); field.select();
+        var copied = false;
+        try { copied = document.execCommand('copy'); } finally { document.body.removeChild(field); }
+        if (!copied) { throw new Error('copy failed'); }
+      }
+      button.onclick = function () {
+        var text = document.getElementById('tailscale-code').textContent;
+        function ok() { status.textContent = 'Opdracht gekopieerd.'; }
+        function legacy() { try { fallback(text); ok(); } catch (error) { status.textContent = 'Selecteer en kopieer de opdracht handmatig.'; } }
+        if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(ok, legacy); }
+        else { legacy(); }
+      };
+    }());
+  </script>
+</body>
+</html>

@@ -415,6 +415,32 @@ Voer voor uitsluitend Xibo `.\install-software.ps1 -SkipApps -InstallXibo` uit v
 Accounts worden niet automatisch gekoppeld. Er wordt geen remote
 TeamViewer-sessie gestart.
 
+## Tailscale los configureren
+
+Installeer eerst zelf de actuele [Tailscale-client](https://tailscale.com/download/windows)
+op de bedoelde andere pc/server. Gebruik daarna de kopieerbare opdracht op
+[Tailscale apart instellen](https://acurvers.github.io/jinda-operations/tailscale.html).
+Die downloadt `configure-tailscale.ps1`, controleert de SHA-256 en start het met
+administratorrechten. Het script kiest de nieuwste aanwezige stabiele PowerShell 7,
+of Windows PowerShell 5.1. Het installeert geen apps en voert geen Windows-inrichting uit.
+
+Het script zet Tailscale-DNS en het accepteren van subnetroutes uit, wist de gekozen
+exit node en leest deze drie voorkeuren terug ter controle. Bij een nieuwe aanmelding
+opent het de officiële browseraanmelding: kies daar het tailnet van de opdrachtgever.
+Het wacht niet op het afronden van de aanmelding of apparaatgoedkeuring. Een bestaande
+aanmelding blijft behouden; het wisselt geen accounts en bevat geen aanmeldsleutels.
+De instellingen gelden voor het actieve Tailscale-profiel. Controleer ze opnieuw als
+je later van tailnet wisselt. Een fout bij instellen of controleren stopt het script.
+
+Dit is voor Windows 10/11 of Server 2016 en nieuwer met een actuele Tailscale-client,
+en staat los van zowel het normale installatiescript als de Server 2012-variant.
+Op een beheer-pc die klant-subnetroutes moet gebruiken, moet het accepteren van die
+routes juist aan blijven. Logs staan in `%LOCALAPPDATA%\JindaOperations\Logs`.
+Offline tests: `Invoke-Pester .\tests\tailscale.Tests.ps1`; ze simuleren Tailscale,
+services en browseraanmelding en veranderen de netwerkconfiguratie niet.
+
+Bron: [Tailscale CLI en voorkeuren](https://tailscale.com/docs/reference/tailscale-cli).
+
 ## Configuratie
 
 Stelt Engels (VS) in voor de systeemvoorkeur, het aanmeldscherm, systeemaccounts,
