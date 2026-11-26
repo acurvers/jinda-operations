@@ -1,4 +1,11 @@
 #Requires -Version 5.1
+# Auteur oorspronkelijke versie: Onbekend
+# Datum aanmaak: 2026-10-11
+# Laatste wijziging: 2026-11-26
+# Oorspronkelijke AI-chatnaam en chatlink: Onbekend
+# Wijzigingshistorie:
+# 2026-11-26 - Codex (AI): PowerShell via OpenSSH - Onderzoek WiFi- en routerproblemen - codex://threads/01a1b634-cd12-7cb3-b767-b3fee1874916
+# Doel: Installatie van geselecteerde Windows-software en OpenSSH.
 <#
 .SYNOPSIS
 Install Jinda apps, Windows OpenSSH, selected projection players and on-demand ClamAV.
@@ -569,6 +576,59 @@ function Add-JindaOpenSSHManagementKey {
     }
 }
 
+function Get-JindaSshSubsystemConfig {
+    param([string]$Config, [string]$Executable)
+    $newline = if ($Config.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $line = "Subsystem powershell $Executable -sshs"
+    $other = [regex]::Replace($Config, '(?im)^[ \t]*Subsystem[ \t]+powershell(?:[ \t]+[^\r\n]*)?\r?(?:\n|$)', '')
+    return $line + $newline + $other
+}
+
+function Enable-JindaSshPowerShell {
+    $root = if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }
+    $pwsh = Join-Path $root 'PowerShell\7\pwsh.exe'
+    if (-not (Test-Path -LiteralPath $pwsh -PathType Leaf)) {
+        Write-Warning 'PowerShell 7 is missing. Install it and repeat OpenSSH setup for PowerShell remoting.'
+        return
+    }
+    $dir = Join-Path $env:ProgramData 'ssh'
+    $link = Join-Path $dir 'jinda-pwsh.exe'
+    $config = Join-Path $dir 'sshd_config'
+    $sshd = Join-Path $env:WINDIR 'System32\OpenSSH\sshd.exe'
+    if ($link -match '\s') { throw "OpenSSH subsystem path contains whitespace: $link" }
+    $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+    if ($item) {
+        if ($item.LinkType -ne 'SymbolicLink' -or [string]$item.Target -ne $pwsh) {
+            throw "Unexpected existing OpenSSH subsystem executable: $link"
+        }
+    } else {
+        New-Item -ItemType SymbolicLink -Path $link -Target $pwsh -ErrorAction Stop | Out-Null
+    }
+    $original = [IO.File]::ReadAllText($config)
+    $updated = Get-JindaSshSubsystemConfig -Config $original -Executable ($link.Replace('\','/'))
+    if ($original -ceq $updated) { return }
+    $temporary = Join-Path $dir ([guid]::NewGuid().ToString() + '.tmp')
+    $backup = "$temporary.bak"
+    try {
+        [IO.File]::WriteAllText($temporary, $updated, [Text.UTF8Encoding]::new($false))
+        & $sshd -t -f $temporary
+        if ($LASTEXITCODE -ne 0) { throw 'OpenSSH rejected the proposed subsystem configuration.' }
+        [IO.File]::Replace($temporary, $config, $backup)
+        try {
+            Restart-Service sshd -ErrorAction Stop
+            (Get-Service sshd).WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
+        } catch {
+            [IO.File]::Replace($backup, $config, $temporary)
+            Start-Service sshd -ErrorAction Stop
+            throw
+        }
+        [IO.File]::Delete($backup)
+        Write-Host 'PowerShell remoting over SSH is configured.'
+    } finally {
+        [IO.File]::Delete($temporary)
+    }
+}
+
 function Install-JindaOpenSSH {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param([string]$LanIPAddress, [string]$SshPublicKey)
@@ -626,6 +686,7 @@ function Install-JindaOpenSSH {
     if ((Get-Service -Name sshd -ErrorAction Stop).Status -ne 'Running') {
         throw 'OpenSSH is installed, but the sshd service is not running.'
     }
+    Enable-JindaSshPowerShell
     Test-JindaOpenSSHSetup -RuleName $ruleName -Lan $lan
     if ($SshPublicKey) { Add-JindaOpenSSHManagementKey -PublicKey $SshPublicKey }
     Write-Host 'OpenSSH is installed and sshd is configured to start with Windows.'

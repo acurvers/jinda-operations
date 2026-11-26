@@ -1,4 +1,21 @@
+# Auteur oorspronkelijke versie: Onbekend
+# Datum aanmaak: 2026-11-08
+# Laatste wijziging: 2026-11-26
+# Oorspronkelijke AI-chatnaam en chatlink: Onbekend
+# Wijzigingshistorie:
+# 2026-11-26 - Codex (AI): PowerShell via OpenSSH - Onderzoek WiFi- en routerproblemen - codex://threads/01a1b634-cd12-7cb3-b767-b3fee1874916
+# Doel: Offline verificatie van de Windows OpenSSH-setup.
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'install-software.ps1')
+
+Describe 'PowerShell SSH subsystem configuration' {
+    It 'preserves SFTP and Match blocks and produces the same result on a second run' {
+        $rest = "Subsystem sftp sftp-server.exe`r`nMatch Group administrators`r`n    AuthorizedKeysFile admins`r`n"
+        $exe = 'C:/ProgramData/ssh/jinda-pwsh.exe'
+        $updated = Get-JindaSshSubsystemConfig ("Subsystem powershell old.exe`r`n" + $rest) $exe
+        $updated | Should Be ("Subsystem powershell $exe -sshs`r`n" + $rest)
+        (Get-JindaSshSubsystemConfig $updated $exe) | Should Be $updated
+    }
+}
 
 Describe 'Windows OpenSSH installation and local subnet access' {
     BeforeEach {
@@ -42,6 +59,7 @@ Describe 'Windows OpenSSH installation and local subnet access' {
         Mock Start-Sleep {}
         Mock Write-Warning {}
         Mock Add-JindaOpenSSHManagementKey {}
+        Mock Enable-JindaSshPowerShell {}
     }
 
     It 'installs both stable Windows features without rebooting and scopes the standard rule before starting SSH' {

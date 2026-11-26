@@ -335,8 +335,11 @@ regel geldt op alle netwerkprofielen, waaronder Public. Het netwerkprofiel
 van de adapter blijft zoals Windows het heeft ingesteld.
 
 Gebruik een bestaand Windows-account met wachtwoord (geen Windows Hello-pincode)
-of een SSH-sleutel. De firewallregel betreft TCP 22. Het script behoudt
-`sshd_config`, inclusief een eventueel afwijkende luisterpoort.
+of een SSH-sleutel. De OpenSSH-regel in Windows Defender Firewall op de gekozen pc betreft TCP 22.
+Als PowerShell 7 aanwezig is, registreert setup het subsysteem `powershell` in
+`sshd_config` voor `Invoke-Command -HostName` met de SSH-sleutel. Setup valideert
+de gewijzigde configuratie en herstart daarna de SSH-service. Een bestaande
+afwijkende luisterpoort blijft behouden.
 Als Windows een herstart vereist, meldt het script dat en moet setup na die herstart
 nogmaals draaien om de service te activeren. Setup herstart Windows niet zelf.
 Na het starten van `sshd` toont de installer de luisteraars op TCP 22 en de
