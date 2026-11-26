@@ -1,4 +1,12 @@
 #Requires -Version 5.1
+# Auteur: Alexander (eerste Git-commit), Codex (AI) (deze wijziging)
+# Datum aanmaak: 2026-10-11
+# Laatste wijziging: 2026-11-26
+# Doel: Dedicated Windows-pc configureren, inclusief de omvang van de gebeurtenislogboeken.
+# AI-chatnaam: Onbekend
+# AI-chatlink: Onbekend
+# Wijzigingshistorie:
+# 2026-11-26 - Loggrootten voor dedicated pc's - Onderzoek PRD1-storingen - codex://threads/01a212db-2b23-7b41-af70-10f760bca0ee
 <#
 .SYNOPSIS
 Configure Windows 11: English (US), a US keyboard and optional remote access.
@@ -739,6 +747,30 @@ function Set-JindaChromeDownloadDirectory {
     Write-Host 'Chrome: downloads are restricted to the Downloads folder for each Windows user. Check chrome://policy after reloading policies.'
 }
 
+function Set-JindaEventLogSizes {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $limits = [ordered]@{
+        'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational' = 116MB
+        'Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational' = 116MB
+        # At about 5 MiB/day this leaves headroom above the six-month target.
+        'Security' = 1280MB
+    }
+    foreach ($name in $limits.Keys) {
+        $target = $limits[$name]
+        $current = (Get-WinEvent -ListLog $name -ErrorAction Stop).MaximumSizeInBytes
+        if ($current -eq $target -or ($name -eq 'Security' -and $current -gt $target)) { continue }
+        if ($PSCmdlet.ShouldProcess($name, "Set maximum event log size to $target bytes")) {
+            & wevtutil.exe sl $name "/ms:$target"
+            if ($LASTEXITCODE -ne 0) { throw "wevtutil failed for $name (exit $LASTEXITCODE)." }
+            if ((Get-WinEvent -ListLog $name -ErrorAction Stop).MaximumSizeInBytes -ne $target) {
+                throw "Event log size verification failed for $name."
+            }
+        }
+    }
+}
+
 function Set-JindaLocalPasswordAgePolicy {
     [CmdletBinding(SupportsShouldProcess = $true)]
     param()
@@ -867,6 +899,7 @@ function Invoke-JindaConfiguration {
     Set-JindaWindowsEnglish -Keyboard $Keyboard
     Write-Host ''
     Set-JindaLocalPasswordAgePolicy
+    Set-JindaEventLogSizes
     Set-JindaBlankPasswordPolicy
     Write-Host ''
     Set-JindaBrowserBookmarks

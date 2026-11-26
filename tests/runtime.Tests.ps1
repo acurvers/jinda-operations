@@ -1,3 +1,11 @@
+# Auteur: Alexander (eerste Git-commit), Codex (AI) (deze wijziging)
+# Datum aanmaak: 2026-10-11
+# Laatste wijziging: 2026-11-26
+# Doel: De runtime en aanroepen van het Windows-configuratiescript controleren.
+# AI-chatnaam: Onbekend
+# AI-chatlink: Onbekend
+# Wijzigingshistorie:
+# 2026-11-26 - Loggrootten voor dedicated pc's - Onderzoek PRD1-storingen - codex://threads/01a212db-2b23-7b41-af70-10f760bca0ee
 $projectPath = Split-Path -Parent $PSScriptRoot
 . (Join-Path $projectPath 'set-windows-english.ps1')
 
@@ -74,6 +82,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         Mock Invoke-JindaChildProcess { 0 }
         Mock Set-JindaWindowsEnglish {}
         Mock Set-JindaLocalPasswordAgePolicy {}
+        Mock Set-JindaEventLogSizes {}
         Mock Set-JindaBlankPasswordPolicy {}
         Mock Set-JindaBrowserBookmarks {}
         Mock Set-JindaChromeDownloadDirectory {}
@@ -102,6 +111,7 @@ Describe 'Runtime discovery and Windows language compatibility' {
         if ($PSVersionTable.PSEdition -eq 'Desktop') {
             Assert-MockCalled Set-JindaWindowsEnglish -Times 1 -Exactly -Scope It -ParameterFilter { $Keyboard -eq 'USInternational' }
             Assert-MockCalled Set-JindaLocalPasswordAgePolicy -Times 1 -Exactly -Scope It
+            Assert-MockCalled Set-JindaEventLogSizes -Times 1 -Exactly -Scope It
             Assert-MockCalled Set-JindaBrowserBookmarks -Times 1 -Exactly -Scope It
             Assert-MockCalled Set-JindaStoreUpdates -Times 1 -Exactly -Scope It
             Assert-MockCalled Invoke-JindaChildProcess -Times 0 -Exactly -Scope It
