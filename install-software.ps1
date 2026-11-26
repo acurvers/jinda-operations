@@ -5,6 +5,7 @@
 # Oorspronkelijke AI-chatnaam en chatlink: Onbekend
 # Wijzigingshistorie:
 # 2026-11-26 - Codex (AI): PowerShell via OpenSSH - Onderzoek WiFi- en routerproblemen - codex://threads/01a1b634-cd12-7cb3-b767-b3fee1874916
+# 2026-11-26 - Codex (AI): Startcontrole vanuit de volledige PowerShell-installatie - Onderzoek WiFi- en routerproblemen - codex://threads/01a1b634-cd12-7cb3-b767-b3fee1874916
 # Doel: Installatie van geselecteerde Windows-software en OpenSSH.
 <#
 .SYNOPSIS
@@ -592,20 +593,25 @@ function Enable-JindaSshPowerShell {
         return
     }
     $dir = Join-Path $env:ProgramData 'ssh'
-    $link = Join-Path $dir 'jinda-pwsh.exe'
     $config = Join-Path $dir 'sshd_config'
     $sshd = Join-Path $env:WINDIR 'System32\OpenSSH\sshd.exe'
-    if ($link -match '\s') { throw "OpenSSH subsystem path contains whitespace: $link" }
-    $item = Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
-    if ($item) {
-        if ($item.LinkType -ne 'SymbolicLink' -or [string]$item.Target -ne $pwsh) {
-            throw "Unexpected existing OpenSSH subsystem executable: $link"
+    $executable = (New-Object -ComObject Scripting.FileSystemObject).GetFile($pwsh).ShortPath
+    if ($executable -match '\s') {
+        $folder = Split-Path -Parent $pwsh
+        $aliasPath = Join-Path $dir 'jinda-powershell7'
+        if ($aliasPath -match '\s') { throw "OpenSSH subsystem path contains whitespace: $aliasPath" }
+        $item = Get-Item -LiteralPath $aliasPath -Force -ErrorAction SilentlyContinue
+        if (-not $item) {
+            New-Item -ItemType Junction -Path $aliasPath -Target $folder -ErrorAction Stop | Out-Null
+        } elseif ($item.LinkType -ne 'Junction' -or [string]$item.Target -ne $folder) {
+            throw "Unexpected existing OpenSSH subsystem directory: $aliasPath"
         }
-    } else {
-        New-Item -ItemType SymbolicLink -Path $link -Target $pwsh -ErrorAction Stop | Out-Null
+        $executable = Join-Path $aliasPath 'pwsh.exe'
     }
+    & $executable -NoProfile -NonInteractive -Command 'exit 0'
+    if ($LASTEXITCODE -ne 0) { throw 'The PowerShell SSH subsystem executable could not start.' }
     $original = [IO.File]::ReadAllText($config)
-    $updated = Get-JindaSshSubsystemConfig -Config $original -Executable ($link.Replace('\','/'))
+    $updated = Get-JindaSshSubsystemConfig -Config $original -Executable ($executable.Replace('\','/'))
     if ($original -ceq $updated) { return }
     $temporary = Join-Path $dir ([guid]::NewGuid().ToString() + '.tmp')
     $backup = "$temporary.bak"
